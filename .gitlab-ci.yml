@@ -1,0 +1,16 @@
+image: golang:1.26.3
+
+stages:
+  - test
+  - lint
+
+test:
+  stage: test
+  script:
+    - go test ./...
+
+lint:
+  stage: lint
+  script:
+    - go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4
+    - golangci-lint run ./...
