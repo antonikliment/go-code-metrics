@@ -9,12 +9,24 @@ The module also provides reusable Go code metrics:
 - `cmd/sizeanalyzer` is the command-line adapter.
 - `goclocbudget` is the thin `golangci-lint` budget feature.
 
+## Install lint configuration
+
+From a Go project, create the default lint files:
+
+```bash
+go run github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@v0.0.1 install
+```
+
+This creates `.custom-gcl.yml` and `.golangci.yml` only when they do not exist.
+Existing configuration is never changed. Review the generated LOC budget before
+building the custom linter.
+
 ## Size analyzer
 
 Pin the analyzer as a project tool:
 
 ```bash
-go get -tool github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.2.0
+go get -tool github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.1
 go tool sizeanalyzer
 ```
 
@@ -44,7 +56,7 @@ go tool sizeanalyzer -exclude-dir app/dist -exclude-dir build
 To run without adding a tool dependency:
 
 ```bash
-go run github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.2.0
+go run github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.1
 ```
 
 ## Go LOC budget
@@ -62,7 +74,7 @@ destination: .
 plugins:
   - module: github.com/antonikliment/go-code-metrics
     import: github.com/antonikliment/go-code-metrics/goclocbudget
-    version: v0.1.0
+    version: v0.0.1
 ```
 
 Enable it in `.golangci.yml`:
