@@ -25,7 +25,7 @@ func TestCountExcludesTestsGeneratedAndConfiguredDirs(t *testing.T) {
 	if result.code != 4 {
 		t.Fatalf("code lines = %d, want 4", result.code)
 	}
-	if len(result.largest) != 1 || result.largest[0] != filepath.Join(root, "main.go")+"=4" {
+	if len(result.largest) != 1 || result.largest[0] != "main.go=4" {
 		t.Fatalf("largest = %#v", result.largest)
 	}
 }

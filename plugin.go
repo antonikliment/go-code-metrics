@@ -2,14 +2,12 @@ package goclocbudget
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
+	metrics "github.com/antonikliment/goclocbudget/analysis"
 	"github.com/golangci/plugin-module-register/register"
-	"github.com/hhatto/gocloc"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -78,36 +76,23 @@ type countResult struct {
 }
 
 func (p plugin) count(root string) (countResult, error) {
-	opts := gocloc.NewClocOptions()
-	opts.IncludeLangs["Go"] = struct{}{}
-	opts.Fullpath = true
-	opts.ReNotMatchDir = excludeDirRegexp(p.settings.ExcludeDirs)
-	if !p.settings.IncludeTests {
-		opts.ReNotMatch = regexp.MustCompile(`_test\.go$`)
-	}
-	processor := gocloc.NewProcessor(gocloc.NewDefinedLanguages(), opts)
-	result, err := processor.Analyze([]string{root})
+	tree, err := metrics.Analyze(metrics.Options{
+		Root:             root,
+		IncludeTests:     p.settings.IncludeTests,
+		ExcludeGenerated: p.settings.ExcludeGenerated,
+		ExcludeDirs:      p.settings.ExcludeDirs,
+	})
 	if err != nil {
 		return countResult{}, err
 	}
-	files := make(gocloc.ClocFiles, 0, len(result.Files))
-	for path, file := range result.Files {
-		if p.settings.ExcludeGenerated && isGenerated(path) {
-			continue
-		}
-		files = append(files, *file)
-	}
+	files := analysisFiles(tree)
 	sort.SliceStable(files, func(i, j int) bool {
 		if files[i].Code != files[j].Code {
 			return files[i].Code > files[j].Code
 		}
-		return files[i].Name < files[j].Name
+		return files[i].Path < files[j].Path
 	})
-	code := 0
-	for _, file := range files {
-		code += int(file.Code)
-	}
-	return countResult{code: code, largest: largestFileSummary(files, 5)}, nil
+	return countResult{code: tree.Code, largest: largestFileSummary(files, 5)}, nil
 }
 
 func isRootPackage(pass *analysis.Pass) bool {
@@ -119,40 +104,24 @@ func isRootPackage(pass *analysis.Pass) bool {
 	return false
 }
 
-func excludeDirRegexp(dirs []string) *regexp.Regexp {
-	parts := make([]string, 0, len(dirs))
-	for _, dir := range dirs {
-		dir = strings.Trim(strings.TrimSpace(filepath.ToSlash(dir)), "/")
-		if dir != "" {
-			parts = append(parts, regexp.QuoteMeta(dir))
-		}
+func analysisFiles(node *metrics.Node) []*metrics.Node {
+	if node.IsFile {
+		return []*metrics.Node{node}
 	}
-	if len(parts) == 0 {
-		return nil
+	var files []*metrics.Node
+	for _, child := range node.Children {
+		files = append(files, analysisFiles(child)...)
 	}
-	return regexp.MustCompile(`(^|/)` + `(` + strings.Join(parts, "|") + `)(/|$)`)
+	return files
 }
 
-func isGenerated(path string) bool {
-	data, err := os.ReadFile(filepath.Clean(path))
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.SplitN(string(data), "\n", 12) {
-		if strings.HasPrefix(line, "// Code generated ") && strings.Contains(line, " DO NOT EDIT.") {
-			return true
-		}
-	}
-	return false
-}
-
-func largestFileSummary(files gocloc.ClocFiles, limit int) []string {
+func largestFileSummary(files []*metrics.Node, limit int) []string {
 	if len(files) < limit {
 		limit = len(files)
 	}
 	out := make([]string, 0, limit)
 	for i := 0; i < limit; i++ {
-		out = append(out, fmt.Sprintf("%s=%d", files[i].Name, files[i].Code))
+		out = append(out, fmt.Sprintf("%s=%d", files[i].Path, files[i].Code))
 	}
 	return out
 }

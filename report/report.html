@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Go code metrics</title>
+<style>
+  :root { color-scheme: dark; font: 14px system-ui; background:#111827; color:#e5e7eb }
+  body { margin:0; padding:24px } h1 { margin:0 0 6px } #summary { color:#9ca3af; margin-bottom:20px }
+  #tree { display:flex; flex-wrap:wrap; gap:4px } .file { box-sizing:border-box; min-width:100px; min-height:72px; padding:9px; overflow:hidden; border:1px solid #ffffff22; border-radius:5px }
+  .name { font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .stats { font-size:12px; color:#d1d5db; margin-top:5px }
+</style>
+<h1 id="title"></h1><div id="summary"></div><main id="tree"></main>
+<script>
+const root=/*__DATA__*/null;
+const files=[];
+function walk(n){if(n.isFile)files.push(n);else(n.children||[]).forEach(walk)} walk(root);
+document.querySelector('#title').textContent=`Go code metrics — ${root.name}`;
+document.querySelector('#summary').textContent=`${files.length} files · ${root.code} code lines · complexity ${root.complexity}`;
+const max=Math.max(...files.map(f=>f.code),1), tree=document.querySelector('#tree');
+for(const f of files){
+  const density=f.code?f.complexity/f.code:0, tile=document.createElement('section');
+  tile.className='file'; tile.style.flexGrow=Math.max(f.code,1); tile.style.flexBasis=`${Math.max(110,480*f.code/max)}px`;
+  tile.style.background=`hsl(${Math.max(0,130-density*900)} 55% 28%)`; tile.title=f.path;
+  tile.innerHTML=`<div class="name"></div><div class="stats">${f.code} loc · c${f.complexity} · max ${f.maxComplexity}</div>`;
+  tile.querySelector('.name').textContent=f.path; tree.appendChild(tile);
+}
+</script>
+</html>
