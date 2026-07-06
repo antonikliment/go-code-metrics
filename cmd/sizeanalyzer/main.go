@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/antonikliment/go-code-metrics/analysis"
+	"github.com/antonikliment/go-code-metrics/comparison"
 	"github.com/antonikliment/go-code-metrics/report"
 )
 
@@ -20,8 +21,29 @@ func main() {
 	includeGenerated := flag.Bool("include-generated", false, "include generated Go files")
 	hotspots := flag.Int("hotspots", 5, "number of function hotspots per file")
 	strict := flag.Bool("strict", false, "fail instead of warning on an unparseable Go file")
+	prMode := flag.Bool("pr", false, "analyze changes against a Git base branch")
+	base := flag.String("base", "main", "Git base revision for PR analysis")
 	flag.Var(&excludeDirs, "exclude-dir", "exclude a project-relative directory (repeatable)")
 	flag.Parse()
+	if *prMode {
+		result, err := comparison.Analyze(comparison.Options{
+			Root: *root, Base: *base, IncludeTests: *includeTests, ExcludeGenerated: !*includeGenerated,
+			ExcludeDirs: excludeDirs, ContinueOnError: !*strict, HotspotLimit: *hotspots,
+		})
+		if err != nil {
+			fail("PR analysis failed", err)
+		}
+		fmt.Print(report.ComparisonTerminal(result, *top))
+		if *jsonOut != "" {
+			data, err := report.ComparisonJSON(result)
+			write(*jsonOut, data, err)
+		}
+		if *htmlOut != "" {
+			data, err := report.ComparisonHTML(result)
+			write(*htmlOut, data, err)
+		}
+		return
+	}
 
 	tree, err := analysis.Analyze(analysis.Options{
 		Root:             *root,

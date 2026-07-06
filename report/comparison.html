@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PR code analysis</title>
+<style>
+  :root { color-scheme:dark; font:14px system-ui; background:#111827; color:#e5e7eb }
+  body { margin:0 auto; padding:28px; max-width:1200px } h1 { margin:0 0 4px } .muted { color:#9ca3af }
+  #cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:22px 0 }
+  .card { background:#1f2937; border:1px solid #374151; border-radius:7px; padding:14px } .value { font-size:24px; font-weight:700 }
+  table { width:100%; border-collapse:collapse } th,td { text-align:left; padding:9px; border-bottom:1px solid #374151 }
+  th { color:#9ca3af } .plus { color:#6ee7b7 } .minus { color:#fca5a5 } details { margin:4px 0 }
+</style>
+<h1>PR code analysis</h1><div id="base" class="muted"></div><section id="cards"></section>
+<table><thead><tr><th>File</th><th>Status</th><th>Lines</th><th>Code</th><th>Complexity</th></tr></thead><tbody id="files"></tbody></table>
+<script>
+const result=/*__DATA__*/null;
+const signed=n=>(n>=0?'+':'')+n;
+document.querySelector('#base').textContent=`Compared with ${result.base} at ${result.mergeBase.slice(0,12)}`;
+const cards=[['Changed files',result.files.length],['Lines',`+${result.linesAdded} / -${result.linesDeleted}`],['Code delta',signed(result.codeAfter-result.codeBefore)],['Complexity added',`+${result.complexityAdded}`],['Complexity removed',`-${result.complexityRemoved}`],['Complexity net',signed(result.complexityAfter-result.complexityBefore)]];
+for(const [label,value] of cards){const card=document.createElement('div');card.className='card';const v=document.createElement('div');v.className='value';v.textContent=value;const l=document.createElement('div');l.className='muted';l.textContent=label;card.append(v,l);document.querySelector('#cards').append(card)}
+for(const file of result.files){const row=document.createElement('tr');const name=document.createElement('td');name.textContent=file.path;const status=document.createElement('td');status.textContent=file.status;const lines=document.createElement('td');lines.textContent=`+${file.linesAdded} / -${file.linesDeleted}`;const code=document.createElement('td');code.textContent=signed(file.codeAfter-file.codeBefore);const complexity=document.createElement('td');complexity.textContent=`+${file.complexityAdded} / -${file.complexityRemoved}`;row.append(name,status,lines,code,complexity);document.querySelector('#files').append(row);for(const fn of file.functions||[]){const detail=document.createElement('tr');const cell=document.createElement('td');cell.colSpan=5;cell.className='muted';cell.textContent=`↳ ${fn.name}: c${fn.before} → c${fn.after} (${signed(fn.delta)})`;detail.append(cell);document.querySelector('#files').append(detail)}}
+</script>
+</html>

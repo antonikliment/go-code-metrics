@@ -57,6 +57,34 @@ Unparseable files retain their LOC and produce warnings by default; use
 `-strict` to fail immediately. Use `-hotspots N` to control the number of
 complexity hotspots retained per file.
 
+### Pull request analysis
+
+Compare the current working tree with its merge base on `main`:
+
+```bash
+go tool sizeanalyzer -pr
+```
+
+PR mode includes committed, staged, unstaged, and untracked files. It reports
+Git line changes, gocloc code deltas, and function-level complexity added,
+removed, and net. Use another target branch with `-base` and write CI artifacts
+with the existing output flags:
+
+```bash
+go tool sizeanalyzer -pr -base origin/main \
+  -json pr-metrics.json -html pr-metrics.html
+```
+
+The base ref and its merge-base history must exist locally. For GitHub Actions,
+check out full history before running the tool:
+
+```yaml
+- uses: actions/checkout@v4
+  with:
+    fetch-depth: 0
+- run: go tool sizeanalyzer -pr -base origin/main
+```
+
 To run without adding a tool dependency:
 
 ```bash
