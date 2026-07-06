@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/antonikliment/goclocbudget/analysis"
+	"github.com/antonikliment/go-code-metrics/analysis"
 )
 
 //go:embed report.html

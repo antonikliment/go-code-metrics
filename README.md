@@ -1,20 +1,20 @@
-# goclocbudget
+# go-code-metrics
 
-`goclocbudget` is a `golangci-lint` module plugin that enforces a repository-wide Go implementation line budget using `gocloc`.
+`go-code-metrics` provides reusable Go source analysis, reporting, and code-quality tooling.
 
 The module also provides reusable Go code metrics:
 
 - `analysis` discovers Go files and measures LOC with `gocloc` and cyclomatic complexity with `gocyclo`.
 - `report` renders terminal, JSON, and self-contained HTML output.
 - `cmd/sizeanalyzer` is the command-line adapter.
-- `plugin.go` is the thin `golangci-lint` budget adapter.
+- `goclocbudget` is the thin `golangci-lint` budget feature.
 
 ## Size analyzer
 
 Pin the analyzer as a project tool:
 
 ```bash
-go get -tool github.com/antonikliment/goclocbudget/cmd/sizeanalyzer@v0.2.0
+go get -tool github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.2.0
 go tool sizeanalyzer
 ```
 
@@ -22,8 +22,8 @@ This records the command in the downstream project's `go.mod`, so local and CI
 runs use the same version. To upgrade or remove it:
 
 ```bash
-go get -tool github.com/antonikliment/goclocbudget/cmd/sizeanalyzer@latest
-go get -tool github.com/antonikliment/goclocbudget/cmd/sizeanalyzer@none
+go get -tool github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@latest
+go get -tool github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@none
 ```
 
 Terminal output is the default. JSON and self-contained HTML reports are
@@ -44,10 +44,13 @@ go tool sizeanalyzer -exclude-dir app/dist -exclude-dir build
 To run without adding a tool dependency:
 
 ```bash
-go run github.com/antonikliment/goclocbudget/cmd/sizeanalyzer@v0.2.0
+go run github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.2.0
 ```
 
-## Usage
+## Go LOC budget
+
+`goclocbudget` is one feature in the module. It enforces a repository-wide Go
+implementation line budget using the shared analysis engine.
 
 Add the plugin to `.custom-gcl.yml`:
 
@@ -57,7 +60,8 @@ name: custom-golangci-lint
 destination: .
 
 plugins:
-  - module: github.com/antonikliment/goclocbudget
+  - module: github.com/antonikliment/go-code-metrics
+    import: github.com/antonikliment/go-code-metrics/goclocbudget
     version: v0.1.0
 ```
 

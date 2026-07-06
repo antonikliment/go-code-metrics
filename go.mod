@@ -1,4 +1,4 @@
-module github.com/antonikliment/goclocbudget
+module github.com/antonikliment/go-code-metrics
 
 go 1.26.3
 

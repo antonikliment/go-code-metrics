@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	metrics "github.com/antonikliment/goclocbudget/analysis"
+	metrics "github.com/antonikliment/go-code-metrics/analysis"
 	"github.com/golangci/plugin-module-register/register"
 	"golang.org/x/tools/go/analysis"
 )
