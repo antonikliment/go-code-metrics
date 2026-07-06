@@ -1,6 +1,6 @@
 module github.com/antonikliment/go-code-metrics
 
-go 1.26.3
+go 1.26
 
 require (
 	github.com/fzipp/gocyclo v0.6.0

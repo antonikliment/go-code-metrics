@@ -16,7 +16,7 @@ const files=[];
 function walk(n){if(n.isFile)files.push(n);else(n.children||[]).forEach(walk)} walk(root);
 document.querySelector('#title').textContent=`Go code metrics — ${root.name}`;
 document.querySelector('#summary').textContent=`${files.length} files · ${root.code} code lines · complexity ${root.complexity}`;
-const max=Math.max(...files.map(f=>f.code),1), tree=document.querySelector('#tree');
+const max=files.reduce((largest,f)=>Math.max(largest,f.code),1), tree=document.querySelector('#tree');
 for(const f of files){
   const density=f.code?f.complexity/f.code:0, tile=document.createElement('section');
   tile.className='file'; tile.style.flexGrow=Math.max(f.code,1); tile.style.flexBasis=`${Math.max(110,480*f.code/max)}px`;

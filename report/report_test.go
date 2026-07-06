@@ -34,3 +34,20 @@ func TestTerminalNegativeTopMeansAll(t *testing.T) {
 		t.Fatalf("negative top omitted files:\n%s", output)
 	}
 }
+
+func TestHTMLEscapesScriptClosingTags(t *testing.T) {
+	root := &analysis.Node{Name: "</script><script>alert(1)</script>", Path: "."}
+	html, err := HTML(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(html), root.Name) || !strings.Contains(string(html), `\u003c/script\u003e`) {
+		t.Fatalf("unsafe embedded JSON: %s", html)
+	}
+}
+
+func TestTruncatePreservesRunes(t *testing.T) {
+	if got := truncate("ab界cd", 4); got != "ab界…" {
+		t.Fatalf("truncate = %q", got)
+	}
+}

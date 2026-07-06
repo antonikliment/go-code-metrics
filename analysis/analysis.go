@@ -2,6 +2,8 @@
 package analysis
 
 import (
+	"bufio"
+	"fmt"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -27,6 +29,7 @@ type Node struct {
 	Functions     int        `json:"functions"`
 	Hotspots      []FuncStat `json:"hotspots,omitempty"`
 	Children      []*Node    `json:"children,omitempty"`
+	Warnings      []string   `json:"warnings,omitempty"`
 }
 
 type FuncStat struct {
@@ -40,6 +43,8 @@ type Options struct {
 	IncludeTests     bool
 	ExcludeGenerated bool
 	ExcludeDirs      []string
+	HotspotLimit     int
+	ContinueOnError  bool
 }
 
 func Analyze(opt Options) (*Node, error) {
@@ -52,6 +57,8 @@ func Analyze(opt Options) (*Node, error) {
 	}
 	root := &Node{Name: filepath.Base(abs), Path: "."}
 	dirs := map[string]*Node{".": root}
+	type candidate struct{ path, rel, name string }
+	var candidates []candidate
 	err = filepath.WalkDir(opt.Root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -72,42 +79,68 @@ func Analyze(opt Options) (*Node, error) {
 		if opt.ExcludeGenerated && generated(path) {
 			return nil
 		}
-		file, err := analyzeFile(path)
-		if err != nil {
-			return err
-		}
-		file.Name, file.Path = entry.Name(), filepath.ToSlash(rel)
-		parent := ensureDir(dirs, root, filepath.Dir(rel))
-		parent.Children = append(parent.Children, file)
+		candidates = append(candidates, candidate{path: path, rel: rel, name: entry.Name()})
 		return nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	paths := make([]string, len(candidates))
+	for i, file := range candidates {
+		paths[i] = file.path
+	}
+	counts, err := countFiles(paths)
+	if err != nil {
+		return nil, err
+	}
+	limit := opt.HotspotLimit
+	if limit == 0 {
+		limit = 5
+	}
+	for _, candidate := range candidates {
+		file, err := analyzeFile(candidate.path, counts[candidate.path], limit)
+		if err != nil && !opt.ContinueOnError {
+			return nil, err
+		}
+		if err != nil {
+			root.Warnings = append(root.Warnings, err.Error())
+		}
+		file.Name, file.Path = candidate.name, filepath.ToSlash(candidate.rel)
+		parent := ensureDir(dirs, root, filepath.Dir(candidate.rel))
+		parent.Children = append(parent.Children, file)
 	}
 	aggregate(root)
 	sortTree(root)
 	return root, nil
 }
 
-func analyzeFile(path string) (*Node, error) {
+func countFiles(paths []string) (map[string]*gocloc.ClocFile, error) {
 	opts := gocloc.NewClocOptions()
 	opts.IncludeLangs["Go"] = struct{}{}
-	result, err := gocloc.NewProcessor(gocloc.NewDefinedLanguages(), opts).Analyze([]string{path})
+	result, err := gocloc.NewProcessor(gocloc.NewDefinedLanguages(), opts).Analyze(paths)
 	if err != nil {
 		return nil, err
 	}
-	var code, comment, blank int
-	for _, file := range result.Files {
-		code, comment, blank = int(file.Code), int(file.Comments), int(file.Blanks)
+	return result.Files, nil
+}
+
+func analyzeFile(path string, count *gocloc.ClocFile, hotspotLimit int) (*Node, error) {
+	if count == nil {
+		return nil, fmt.Errorf("gocloc did not return metrics for %s", path)
+	}
+	node := &Node{IsFile: true, Code: int(count.Code), Comment: int(count.Comments), Blank: int(count.Blanks)}
+	src, err := os.ReadFile(path)
+	if err != nil {
+		return node, err
 	}
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+	file, err := parser.ParseFile(fset, path, src, parser.ParseComments)
 	if err != nil {
-		return nil, err
+		return node, err
 	}
 	all := gocyclo.AnalyzeASTFile(file, fset, nil)
-	stats := all.SortAndFilter(5, 0)
-	node := &Node{IsFile: true, Code: code, Comment: comment, Blank: blank, Functions: len(all)}
+	stats := all.SortAndFilter(hotspotLimit, 0)
+	node.Functions = len(all)
 	for _, stat := range all {
 		node.Complexity += stat.Complexity
 		if stat.Complexity > node.MaxComplexity {
@@ -136,16 +169,30 @@ func excludedDir(rel, name string, dirs []string) bool {
 var generatedLine = regexp.MustCompile(`^// Code generated .* DO NOT EDIT\.$`)
 
 func generated(path string) bool {
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
 		return false
 	}
-	for _, line := range strings.SplitN(string(data), "\n", 12) {
-		if generatedLine.MatchString(line) {
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for line := 0; line < 12 && scanner.Scan(); line++ {
+		if generatedLine.MatchString(scanner.Text()) {
 			return true
 		}
 	}
 	return false
+}
+
+// Files returns every file node in tree order.
+func Files(node *Node) []*Node {
+	if node.IsFile {
+		return []*Node{node}
+	}
+	var files []*Node
+	for _, child := range node.Children {
+		files = append(files, Files(child)...)
+	}
+	return files
 }
 
 func ensureDir(dirs map[string]*Node, root *Node, dir string) *Node {

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-const Version = "v0.0.1"
+const Version = "v0.0.2"
 
 type Result struct {
 	Path    string
@@ -26,7 +26,7 @@ destination: .
 plugins:
   - module: github.com/antonikliment/go-code-metrics
     import: github.com/antonikliment/go-code-metrics/goclocbudget
-    version: v0.0.1
+    version: v0.0.2
 `},
 	{".golangci.yml", `version: "2"
 

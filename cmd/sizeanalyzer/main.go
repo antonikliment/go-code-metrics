@@ -18,6 +18,8 @@ func main() {
 	top := flag.Int("top", 12, "number of files in top lists")
 	includeTests := flag.Bool("include-tests", false, "include _test.go files")
 	includeGenerated := flag.Bool("include-generated", false, "include generated Go files")
+	hotspots := flag.Int("hotspots", 5, "number of function hotspots per file")
+	strict := flag.Bool("strict", false, "fail instead of warning on an unparseable Go file")
 	flag.Var(&excludeDirs, "exclude-dir", "exclude a project-relative directory (repeatable)")
 	flag.Parse()
 
@@ -26,6 +28,8 @@ func main() {
 		IncludeTests:     *includeTests,
 		ExcludeGenerated: !*includeGenerated,
 		ExcludeDirs:      excludeDirs,
+		HotspotLimit:     *hotspots,
+		ContinueOnError:  !*strict,
 	})
 	if err != nil {
 		fail("analysis failed", err)
@@ -56,7 +60,7 @@ func write(path string, data []byte, err error) {
 	if err != nil {
 		fail("rendering report failed", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
 		fail("writing report failed", err)
 	}
 }

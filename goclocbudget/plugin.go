@@ -2,9 +2,11 @@ package goclocbudget
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	metrics "github.com/antonikliment/go-code-metrics/analysis"
 	"github.com/golangci/plugin-module-register/register"
@@ -20,12 +22,14 @@ func init() {
 type settings struct {
 	MaxGoCodeLines   int      `json:"max-go-code-lines"`
 	IncludeTests     bool     `json:"include-tests"`
-	ExcludeGenerated bool     `json:"exclude-generated"`
+	ExcludeGenerated *bool    `json:"exclude-generated"`
 	ExcludeDirs      []string `json:"exclude-dirs"`
 }
 
 type plugin struct {
 	settings settings
+	once     sync.Once
+	runErr   error
 }
 
 func New(raw any) (register.LinterPlugin, error) {
@@ -36,17 +40,14 @@ func New(raw any) (register.LinterPlugin, error) {
 	if cfg.MaxGoCodeLines <= 0 {
 		return nil, fmt.Errorf("max-go-code-lines must be positive")
 	}
-	if len(cfg.ExcludeDirs) == 0 {
-		cfg.ExcludeDirs = []string{"vendor", ".git", "node_modules", "app/dist"}
-	}
-	return plugin{settings: cfg}, nil
+	return &plugin{settings: cfg}, nil
 }
 
-func (p plugin) GetLoadMode() string {
+func (p *plugin) GetLoadMode() string {
 	return register.LoadModeSyntax
 }
 
-func (p plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
+func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	return []*analysis.Analyzer{{
 		Name: pluginName,
 		Doc:  "checks repository-wide implementation Go code line budget",
@@ -54,20 +55,24 @@ func (p plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	}}, nil
 }
 
-func (p plugin) run(pass *analysis.Pass) (any, error) {
-	if !isRootPackage(pass) {
-		return nil, nil
-	}
-	result, err := p.count(".")
-	if err != nil {
-		return nil, err
-	}
-	if result.code <= p.settings.MaxGoCodeLines {
-		return nil, nil
-	}
-	pass.Reportf(pass.Files[0].Package, "implementation Go LOC budget exceeded: %d > %d. Largest files: %s",
-		result.code, p.settings.MaxGoCodeLines, strings.Join(result.largest, ", "))
-	return nil, nil
+func (p *plugin) run(pass *analysis.Pass) (any, error) {
+	p.once.Do(func() {
+		root, err := moduleRoot(".")
+		if err != nil {
+			p.runErr = err
+			return
+		}
+		result, err := p.count(root)
+		if err != nil {
+			p.runErr = err
+			return
+		}
+		if result.code > p.settings.MaxGoCodeLines {
+			pass.Reportf(pass.Files[0].Package, "implementation Go LOC budget exceeded: %d > %d. Largest files: %s",
+				result.code, p.settings.MaxGoCodeLines, strings.Join(result.largest, ", "))
+		}
+	})
+	return nil, p.runErr
 }
 
 type countResult struct {
@@ -75,17 +80,17 @@ type countResult struct {
 	largest []string
 }
 
-func (p plugin) count(root string) (countResult, error) {
+func (p *plugin) count(root string) (countResult, error) {
 	tree, err := metrics.Analyze(metrics.Options{
 		Root:             root,
 		IncludeTests:     p.settings.IncludeTests,
-		ExcludeGenerated: p.settings.ExcludeGenerated,
+		ExcludeGenerated: p.settings.ExcludeGenerated == nil || *p.settings.ExcludeGenerated,
 		ExcludeDirs:      p.settings.ExcludeDirs,
 	})
 	if err != nil {
 		return countResult{}, err
 	}
-	files := analysisFiles(tree)
+	files := metrics.Files(tree)
 	sort.SliceStable(files, func(i, j int) bool {
 		if files[i].Code != files[j].Code {
 			return files[i].Code > files[j].Code
@@ -95,24 +100,23 @@ func (p plugin) count(root string) (countResult, error) {
 	return countResult{code: tree.Code, largest: largestFileSummary(files, 5)}, nil
 }
 
-func isRootPackage(pass *analysis.Pass) bool {
-	for _, file := range pass.Files {
-		if filepath.Base(pass.Fset.File(file.Package).Name()) == "main.go" {
-			return true
+func moduleRoot(start string) (string, error) {
+	root, err := filepath.Abs(start)
+	if err != nil {
+		return "", err
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+			return root, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
 		}
+		parent := filepath.Dir(root)
+		if parent == root {
+			return "", fmt.Errorf("go.mod not found from %s", start)
+		}
+		root = parent
 	}
-	return false
-}
-
-func analysisFiles(node *metrics.Node) []*metrics.Node {
-	if node.IsFile {
-		return []*metrics.Node{node}
-	}
-	var files []*metrics.Node
-	for _, child := range node.Children {
-		files = append(files, analysisFiles(child)...)
-	}
-	return files
 }
 
 func largestFileSummary(files []*metrics.Node, limit int) []string {

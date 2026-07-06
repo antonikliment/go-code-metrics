@@ -29,11 +29,17 @@ func HTML(root *analysis.Node) ([]byte, error) {
 }
 
 func Terminal(root *analysis.Node, top int) string {
-	files := flatten(root)
+	files := analysis.Files(root)
 	var out strings.Builder
 	fmt.Fprintf(&out, "Project size analysis — %s\n", root.Name)
 	fmt.Fprintf(&out, "%d files · %d code · %d comment · %d blank · complexity %d (avg %.1f over %d funcs)\n\n",
 		len(files), root.Code, root.Comment, root.Blank, root.Complexity, average(root.Complexity, root.Functions), root.Functions)
+	for _, warning := range root.Warnings {
+		fmt.Fprintf(&out, "warning: %s\n", warning)
+	}
+	if len(root.Warnings) > 0 {
+		out.WriteByte('\n')
+	}
 	writeTree(&out, root, root.Code, "")
 	fmt.Fprintf(&out, "\nTop %d files by code:\n", top)
 	writeFiles(&out, topBy(files, top, func(node *analysis.Node) int { return node.Code }))
@@ -57,17 +63,6 @@ func writeFiles(out *strings.Builder, files []*analysis.Node) {
 	}
 }
 
-func flatten(node *analysis.Node) []*analysis.Node {
-	if node.IsFile {
-		return []*analysis.Node{node}
-	}
-	var files []*analysis.Node
-	for _, child := range node.Children {
-		files = append(files, flatten(child)...)
-	}
-	return files
-}
-
 func topBy(files []*analysis.Node, limit int, value func(*analysis.Node) int) []*analysis.Node {
 	out := append([]*analysis.Node(nil), files...)
 	sort.SliceStable(out, func(i, j int) bool { return value(out[i]) > value(out[j]) })
@@ -87,10 +82,11 @@ func bar(value, max int) string {
 }
 
 func truncate(value string, width int) string {
-	if len(value) <= width {
+	runes := []rune(value)
+	if len(runes) <= width {
 		return value
 	}
-	return value[:width-1] + "…"
+	return string(runes[:width-1]) + "…"
 }
 
 func average(sum, count int) float64 {

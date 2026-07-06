@@ -33,6 +33,19 @@ func TestAnalyzeReturnsParseErrors(t *testing.T) {
 	}
 }
 
+func TestAnalyzeCanContinueAfterParseErrors(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "valid.go", "package sample\nfunc valid() {}\n")
+	write(t, root, "broken.go", "package sample\nfunc nope(\n")
+	tree, err := Analyze(Options{Root: root, ContinueOnError: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.Children) != 2 || len(tree.Warnings) != 1 {
+		t.Fatalf("files=%d warnings=%v", len(tree.Children), tree.Warnings)
+	}
+}
+
 func TestGoclocCountsMultilineStrings(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "main.go", "package main\nvar text = `line one\nline two\nline three`\n")
@@ -55,6 +68,18 @@ func TestGocycloNamesGenericReceiver(t *testing.T) {
 	hotspots := tree.Children[0].Hotspots
 	if len(hotspots) != 1 || hotspots[0].Name != "(*Repo).Find" {
 		t.Fatalf("hotspots = %+v, want generic receiver name", hotspots)
+	}
+}
+
+func TestHotspotLimit(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "main.go", "package main\nfunc one() {}\nfunc two() {}\n")
+	tree, err := Analyze(Options{Root: root, HotspotLimit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(tree.Children[0].Hotspots); got != 1 {
+		t.Fatalf("hotspots = %d, want 1", got)
 	}
 }
 
