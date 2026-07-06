@@ -2,6 +2,30 @@
 
 `goclocbudget` is a `golangci-lint` module plugin that enforces a repository-wide Go implementation line budget using `gocloc`.
 
+The module also provides reusable Go code metrics:
+
+- `analysis` discovers Go files and measures LOC with `gocloc` and cyclomatic complexity with `gocyclo`.
+- `report` renders terminal, JSON, and self-contained HTML output.
+- `cmd/sizeanalyzer` is the command-line adapter.
+- `plugin.go` is the thin `golangci-lint` budget adapter.
+
+## Size analyzer
+
+Run a terminal summary:
+
+```bash
+go run ./cmd/sizeanalyzer
+```
+
+Write machine-readable or browser reports:
+
+```bash
+go run ./cmd/sizeanalyzer -json size-report.json -html size-report.html
+```
+
+Tests and generated files are excluded by default. Use `-include-tests` or
+`-include-generated` when those sources should contribute to the report.
+
 ## Usage
 
 Add the plugin to `.custom-gcl.yml`:
