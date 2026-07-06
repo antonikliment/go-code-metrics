@@ -76,7 +76,7 @@ func Analyze(opt Options) (*Node, error) {
 		if err != nil {
 			return err
 		}
-		file.Name, file.Path = entry.Name(), rel
+		file.Name, file.Path = entry.Name(), filepath.ToSlash(rel)
 		parent := ensureDir(dirs, root, filepath.Dir(rel))
 		parent.Children = append(parent.Children, file)
 		return nil
@@ -156,7 +156,7 @@ func ensureDir(dirs map[string]*Node, root *Node, dir string) *Node {
 		return node
 	}
 	parent := ensureDir(dirs, root, filepath.Dir(dir))
-	node := &Node{Name: filepath.Base(dir), Path: dir}
+	node := &Node{Name: filepath.Base(dir), Path: filepath.ToSlash(dir)}
 	dirs[dir] = node
 	parent.Children = append(parent.Children, node)
 	return node

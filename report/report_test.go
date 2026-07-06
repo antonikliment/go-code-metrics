@@ -25,3 +25,12 @@ func TestRenderers(t *testing.T) {
 		t.Fatalf("HTML: %v", err)
 	}
 }
+
+func TestTerminalNegativeTopMeansAll(t *testing.T) {
+	root := &analysis.Node{Name: "demo", Path: ".", Code: 1, Children: []*analysis.Node{
+		{Name: "main.go", Path: "main.go", IsFile: true, Code: 1},
+	}}
+	if output := Terminal(root, -1); !strings.Contains(output, "main.go") {
+		t.Fatalf("negative top omitted files:\n%s", output)
+	}
+}
