@@ -45,6 +45,19 @@ func TestGoclocCountsMultilineStrings(t *testing.T) {
 	}
 }
 
+func TestGocycloNamesGenericReceiver(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "generic.go", "package generic\ntype Repo[K, V any] struct{}\nfunc (*Repo[K, V]) Find() {}\n")
+	tree, err := Analyze(Options{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hotspots := tree.Children[0].Hotspots
+	if len(hotspots) != 1 || hotspots[0].Name != "(*Repo).Find" {
+		t.Fatalf("hotspots = %+v, want generic receiver name", hotspots)
+	}
+}
+
 func write(t *testing.T, root, name, content string) {
 	t.Helper()
 	path := filepath.Join(root, name)
