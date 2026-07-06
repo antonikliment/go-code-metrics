@@ -1,0 +1,34 @@
+name: PR metrics
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Fetch base branch
+        run: git fetch --no-tags origin "${{ github.base_ref }}"
+      - name: Analyze PR complexity
+        run: |
+          go run ./cmd/sizeanalyzer -pr -base "origin/${{ github.base_ref }}" \
+            -json pr-metrics.json -html pr-metrics.html | tee pr-metrics.txt
+      - name: Upload PR metrics report
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-metrics
+          path: |
+            pr-metrics.html
+            pr-metrics.json
+            pr-metrics.txt

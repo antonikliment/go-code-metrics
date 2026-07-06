@@ -14,11 +14,54 @@
 <h1>PR code analysis</h1><div id="base" class="muted"></div><section id="cards"></section>
 <table><thead><tr><th>File</th><th>Status</th><th>Lines</th><th>Code</th><th>Complexity</th></tr></thead><tbody id="files"></tbody></table>
 <script>
-const result=/*__DATA__*/null;
-const signed=n=>(n>=0?'+':'')+n;
-document.querySelector('#base').textContent=`Compared with ${result.base} at ${result.mergeBase.slice(0,12)}`;
-const cards=[['Changed files',result.files.length],['Lines',`+${result.linesAdded} / -${result.linesDeleted}`],['Code delta',signed(result.codeAfter-result.codeBefore)],['Complexity added',`+${result.complexityAdded}`],['Complexity removed',`-${result.complexityRemoved}`],['Complexity net',signed(result.complexityAfter-result.complexityBefore)]];
-for(const [label,value] of cards){const card=document.createElement('div');card.className='card';const v=document.createElement('div');v.className='value';v.textContent=value;const l=document.createElement('div');l.className='muted';l.textContent=label;card.append(v,l);document.querySelector('#cards').append(card)}
-for(const file of result.files){const row=document.createElement('tr');const name=document.createElement('td');name.textContent=file.path;const status=document.createElement('td');status.textContent=file.status;const lines=document.createElement('td');lines.textContent=`+${file.linesAdded} / -${file.linesDeleted}`;const code=document.createElement('td');code.textContent=signed(file.codeAfter-file.codeBefore);const complexity=document.createElement('td');complexity.textContent=`+${file.complexityAdded} / -${file.complexityRemoved}`;row.append(name,status,lines,code,complexity);document.querySelector('#files').append(row);for(const fn of file.functions||[]){const detail=document.createElement('tr');const cell=document.createElement('td');cell.colSpan=5;cell.className='muted';cell.textContent=`↳ ${fn.name}: c${fn.before} → c${fn.after} (${signed(fn.delta)})`;detail.append(cell);document.querySelector('#files').append(detail)}}
+const result = /*__DATA__*/null;
+const signed = n => (n >= 0 ? '+' : '') + n;
+const tone = n => (n > 0 ? 'plus' : n < 0 ? 'minus' : '');
+const cell = (text, cls) => { const td = document.createElement('td'); td.textContent = text; if (cls) td.className = cls; return td; };
+
+document.querySelector('#base').textContent = `Compared with ${result.base} at ${result.mergeBase.slice(0, 12)}`;
+
+const codeDelta = result.codeAfter - result.codeBefore;
+const complexityNet = result.complexityAfter - result.complexityBefore;
+const cards = [
+  ['Changed files', result.files.length],
+  ['Lines', `+${result.linesAdded} / -${result.linesDeleted}`],
+  ['Code delta', signed(codeDelta), tone(codeDelta)],
+  ['Complexity added', `+${result.complexityAdded}`, tone(result.complexityAdded)],
+  ['Complexity removed', `-${result.complexityRemoved}`, tone(-result.complexityRemoved)],
+  ['Complexity net', signed(complexityNet), tone(complexityNet)],
+];
+for (const [label, value, cls] of cards) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const v = document.createElement('div');
+  v.className = 'value' + (cls ? ' ' + cls : '');
+  v.textContent = value;
+  const l = document.createElement('div');
+  l.className = 'muted';
+  l.textContent = label;
+  card.append(v, l);
+  document.querySelector('#cards').append(card);
+}
+
+const files = document.querySelector('#files');
+for (const file of result.files) {
+  const row = document.createElement('tr');
+  row.append(
+    cell(file.path),
+    cell(file.status),
+    cell(`+${file.linesAdded} / -${file.linesDeleted}`),
+    cell(signed(file.codeAfter - file.codeBefore), tone(file.codeAfter - file.codeBefore)),
+    cell(`+${file.complexityAdded} / -${file.complexityRemoved}`),
+  );
+  files.append(row);
+  for (const fn of file.functions || []) {
+    const detail = document.createElement('tr');
+    const c = cell(`↳ ${fn.name}: c${fn.before} → c${fn.after} (${signed(fn.delta)})`, 'muted');
+    c.colSpan = 5;
+    detail.append(c);
+    files.append(detail);
+  }
+}
 </script>
 </html>
