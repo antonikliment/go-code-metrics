@@ -11,20 +11,41 @@ The module also provides reusable Go code metrics:
 
 ## Size analyzer
 
-Run a terminal summary:
+Pin the analyzer as a project tool:
 
 ```bash
-go run ./cmd/sizeanalyzer
+go get -tool github.com/antonikliment/goclocbudget/cmd/sizeanalyzer@v0.2.0
+go tool sizeanalyzer
 ```
 
-Write machine-readable or browser reports:
+This records the command in the downstream project's `go.mod`, so local and CI
+runs use the same version. To upgrade or remove it:
 
 ```bash
-go run ./cmd/sizeanalyzer -json size-report.json -html size-report.html
+go get -tool github.com/antonikliment/goclocbudget/cmd/sizeanalyzer@latest
+go get -tool github.com/antonikliment/goclocbudget/cmd/sizeanalyzer@none
+```
+
+Terminal output is the default. JSON and self-contained HTML reports are
+explicit outputs suitable for CI artifacts:
+
+```bash
+go tool sizeanalyzer -json size-report.json -html size-report.html
 ```
 
 Tests and generated files are excluded by default. Use `-include-tests` or
-`-include-generated` when those sources should contribute to the report.
+`-include-generated` to include them. Project-relative directories can be
+excluded with repeatable flags:
+
+```bash
+go tool sizeanalyzer -exclude-dir app/dist -exclude-dir build
+```
+
+To run without adding a tool dependency:
+
+```bash
+go run github.com/antonikliment/goclocbudget/cmd/sizeanalyzer@v0.2.0
+```
 
 ## Usage
 
