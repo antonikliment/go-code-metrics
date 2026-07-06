@@ -14,7 +14,7 @@ The module also provides reusable Go code metrics:
 From a Go project, create the default lint files:
 
 ```bash
-go run github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@v0.0.1 install
+go run github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@v0.0.2 install
 ```
 
 This creates `.custom-gcl.yml` and `.golangci.yml` only when they do not exist.
@@ -26,7 +26,7 @@ building the custom linter.
 Pin the analyzer as a project tool:
 
 ```bash
-go get -tool github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.1
+go get -tool github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.2
 go tool sizeanalyzer
 ```
 
@@ -53,10 +53,14 @@ excluded with repeatable flags:
 go tool sizeanalyzer -exclude-dir app/dist -exclude-dir build
 ```
 
+Unparseable files retain their LOC and produce warnings by default; use
+`-strict` to fail immediately. Use `-hotspots N` to control the number of
+complexity hotspots retained per file.
+
 To run without adding a tool dependency:
 
 ```bash
-go run github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.1
+go run github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.2
 ```
 
 ## Go LOC budget
@@ -74,7 +78,7 @@ destination: .
 plugins:
   - module: github.com/antonikliment/go-code-metrics
     import: github.com/antonikliment/go-code-metrics/goclocbudget
-    version: v0.0.1
+    version: v0.0.2
 ```
 
 Enable it in `.golangci.yml`:
