@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/antonikliment/goclocbudget/analysis"
+	"github.com/antonikliment/go-code-metrics/analysis"
 )
 
 func TestRenderers(t *testing.T) {

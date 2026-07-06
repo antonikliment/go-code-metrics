@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/antonikliment/goclocbudget/analysis"
-	"github.com/antonikliment/goclocbudget/report"
+	"github.com/antonikliment/go-code-metrics/analysis"
+	"github.com/antonikliment/go-code-metrics/report"
 )
 
 func main() {
