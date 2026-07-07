@@ -1,0 +1,16 @@
+# Woodpecker CI equivalent of .github/workflows/ci.yml
+when:
+  - event: pull_request
+  - event: push
+    branch: main
+
+steps:
+  test:
+    image: golang:1.26
+    commands:
+      - go test ./...
+
+  lint:
+    image: golangci/golangci-lint:v2.11.4
+    commands:
+      - golangci-lint run ./...

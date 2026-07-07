@@ -1,0 +1,33 @@
+# Woodpecker CI equivalent of .github/workflows/pr-metrics.yml
+# Runs the analyzer in -pr mode and produces the HTML/JSON/text report.
+when:
+  - event: pull_request
+
+# Full history so `git merge-base` against the target branch resolves.
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    settings:
+      depth: 0
+
+steps:
+  metrics:
+    image: golang:1.26
+    commands:
+      - git fetch --no-tags origin "$CI_COMMIT_TARGET_BRANCH"
+      - >
+        go run ./cmd/sizeanalyzer -pr -base "origin/$CI_COMMIT_TARGET_BRANCH"
+        -json pr-metrics.json -html pr-metrics.html | tee pr-metrics.txt
+
+  # Woodpecker has no built-in per-run artifact store like GitHub Actions.
+  # To publish pr-metrics.html to a PR, add a storage step and configure its
+  # secrets on the repo, e.g. an S3-compatible bucket:
+  #
+  # publish:
+  #   image: woodpeckerci/plugin-s3
+  #   settings:
+  #     bucket: pr-metrics
+  #     source: pr-metrics.*
+  #     target: /${CI_REPO}/${CI_COMMIT_PULL_REQUEST}
+  #     access_key: {from_secret: s3_access_key}
+  #     secret_key: {from_secret: s3_secret_key}
