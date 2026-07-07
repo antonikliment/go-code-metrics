@@ -151,6 +151,16 @@ steps:
       - go run ./cmd/sizeanalyzer -pr -base "origin/$CI_COMMIT_TARGET_BRANCH" -html pr-metrics.html
 ```
 
+A second `complexity-diff` step re-prints the `complexity +X -Y (net Z)`
+summary line on its own, so the complexity added by the PR shows as a distinct,
+easy-to-scan step in the Woodpecker UI.
+
+A third `pr-comment` step posts the text report back to the pull request as a
+comment via the GitHub API, using a `github_token` repo secret. GitHub
+sanitizes HTML/JS in comments, so the self-contained HTML report cannot render
+inline — it stays a downloadable artifact, while the comment carries the same
+complexity/size data as text.
+
 Woodpecker has no built-in per-run artifact store. To publish the HTML report,
 add a storage step (for example `woodpeckerci/plugin-s3`) and provide its
 credentials as repo secrets. `.woodpecker/ci.yaml` additionally mirrors the

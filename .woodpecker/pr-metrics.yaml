@@ -19,6 +19,34 @@ steps:
         go run ./cmd/sizeanalyzer -pr -base "origin/$CI_COMMIT_TARGET_BRANCH"
         -json pr-metrics.json -html pr-metrics.html | tee pr-metrics.txt
 
+  # Surfaces just the complexity delta as its own named step in the Woodpecker
+  # UI. Reads the summary line the metrics step already wrote.
+  complexity-diff:
+    image: golang:1.26
+    commands:
+      - grep -i complexity pr-metrics.txt
+
+  # Posts the text report (pr-metrics.txt) rather than the HTML because GitHub
+  # sanitizes HTML/JS in issue comments, so the self-contained HTML report
+  # cannot render inline — it stays a downloadable artifact. The text report
+  # carries the same complexity/size data in a form GitHub will display.
+  pr-comment:
+    image: alpine:3
+    when:
+      - event: pull_request
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
+    commands:
+      - apk add --no-cache curl jq
+      - >
+        body=$(jq -Rs '{"body": "### PR code metrics\n```\n" + . + "```"}' pr-metrics.txt) &&
+        curl -fsSL -X POST
+        -H "Authorization: Bearer $GITHUB_TOKEN"
+        -H "Accept: application/vnd.github+json"
+        -d "$body"
+        "https://api.github.com/repos/$CI_REPO/issues/$CI_COMMIT_PULL_REQUEST/comments"
+
   # Woodpecker has no built-in per-run artifact store like GitHub Actions.
   # To publish pr-metrics.html to a PR, add a storage step and configure its
   # secrets on the repo, e.g. an S3-compatible bucket:
