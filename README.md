@@ -14,7 +14,7 @@ The module also provides reusable Go code metrics:
 From a Go project, create the default lint files:
 
 ```bash
-go run github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@v0.0.2 install
+go run github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@v0.0.3 install
 ```
 
 This creates `.custom-gcl.yml` and `.golangci.yml` only when they do not exist.
@@ -26,7 +26,7 @@ building the custom linter.
 Pin the analyzer as a project tool:
 
 ```bash
-go get -tool github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.2
+go get -tool github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.3
 go tool sizeanalyzer
 ```
 
@@ -88,7 +88,7 @@ check out full history before running the tool:
 To run without adding a tool dependency:
 
 ```bash
-go run github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.2
+go run github.com/antonikliment/go-code-metrics/cmd/sizeanalyzer@v0.0.3
 ```
 
 ## Continuous integration
@@ -161,6 +161,20 @@ sanitizes HTML/JS in comments, so the self-contained HTML report cannot render
 inline — it stays a downloadable artifact, while the comment carries the same
 complexity/size data as text.
 
+On a **private** repository the clone plugin's credentials do not carry into the
+`metrics` step's container, so a plain `git fetch origin` fails to authenticate.
+Fetch the base branch with a token instead and materialize the tracking ref:
+
+```yaml
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
+    commands:
+      - >
+        git fetch --no-tags "https://x-access-token:$GITHUB_TOKEN@github.com/$CI_REPO.git"
+        "$CI_COMMIT_TARGET_BRANCH:refs/remotes/origin/$CI_COMMIT_TARGET_BRANCH"
+```
+
 Woodpecker has no built-in per-run artifact store. To publish the HTML report,
 add a storage step (for example `woodpeckerci/plugin-s3`) and provide its
 credentials as repo secrets. `.woodpecker/ci.yaml` additionally mirrors the
@@ -181,7 +195,7 @@ destination: .
 plugins:
   - module: github.com/antonikliment/go-code-metrics
     import: github.com/antonikliment/go-code-metrics/goclocbudget
-    version: v0.0.2
+    version: v0.0.3
 ```
 
 Enable it in `.golangci.yml`:
