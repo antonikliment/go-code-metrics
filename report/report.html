@@ -5,24 +5,83 @@
 <title>Go code metrics</title>
 <style>
   :root { color-scheme: dark; font: 14px system-ui; background:#111827; color:#e5e7eb }
-  body { margin:0; padding:24px } h1 { margin:0 0 6px } #summary { color:#9ca3af; margin-bottom:20px }
-  #tree { display:flex; flex-wrap:wrap; gap:4px } .file { box-sizing:border-box; min-width:100px; min-height:72px; padding:9px; overflow:hidden; border:1px solid #ffffff22; border-radius:5px }
-  .name { font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } .stats { font-size:12px; color:#d1d5db; margin-top:5px }
+  body { margin:0; padding:24px }
+  h1 { margin:0 0 6px }
+  #summary { color:#9ca3af; margin-bottom:16px }
+  #crumbs { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-bottom:14px; font-size:13px }
+  #crumbs button { background:none; border:none; color:#93c5fd; cursor:pointer; padding:2px 4px; font:inherit; border-radius:4px }
+  #crumbs button:hover { background:#ffffff11; text-decoration:underline }
+  #crumbs .sep { color:#6b7280 }
+  #tree { display:flex; flex-wrap:wrap; gap:6px; align-content:flex-start }
+  .tile { box-sizing:border-box; min-width:120px; min-height:80px; padding:10px; overflow:hidden;
+          border:1px solid #ffffff22; border-radius:6px; text-align:left; color:inherit; font:inherit; display:block }
+  .tile.dir { cursor:pointer }
+  .tile.dir:hover { border-color:#ffffff77; outline:1px solid #ffffff33 }
+  .name { font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .name .icon { opacity:.75; margin-right:5px }
+  .stats { font-size:12px; color:#e5e7eb; margin-top:6px; opacity:.92 }
+  .empty { color:#9ca3af; padding:20px }
 </style>
-<h1 id="title"></h1><div id="summary"></div><main id="tree"></main>
+<h1 id="title"></h1>
+<div id="summary"></div>
+<nav id="crumbs"></nav>
+<main id="tree"></main>
 <script>
 const root=/*__DATA__*/null;
-const files=[];
-function walk(n){if(n.isFile)files.push(n);else(n.children||[]).forEach(walk)} walk(root);
+
+// Navigation stack of nodes from root to current view.
+let stack=[root];
+const current=()=>stack[stack.length-1];
+
+function countFiles(n){ if(n.isFile) return 1; return (n.children||[]).reduce((s,c)=>s+countFiles(c),0); }
+
+const totalFiles=countFiles(root);
 document.querySelector('#title').textContent=`Go code metrics — ${root.name}`;
-document.querySelector('#summary').textContent=`${files.length} files · ${root.code} code lines · complexity ${root.complexity}`;
-const max=files.reduce((largest,f)=>Math.max(largest,f.code),1), tree=document.querySelector('#tree');
-for(const f of files){
-  const density=f.code?f.complexity/f.code:0, tile=document.createElement('section');
-  tile.className='file'; tile.style.flexGrow=Math.max(f.code,1); tile.style.flexBasis=`${Math.max(110,480*f.code/max)}px`;
-  tile.style.background=`hsl(${Math.max(0,130-density*900)} 55% 28%)`; tile.title=f.path;
-  tile.innerHTML=`<div class="name"></div><div class="stats">${f.code} loc · c${f.complexity} · max ${f.maxComplexity}</div>`;
-  tile.querySelector('.name').textContent=f.path; tree.appendChild(tile);
+document.querySelector('#summary').textContent=
+  `${totalFiles} files · ${root.code} code lines · complexity ${root.complexity}`;
+
+function densityColor(n){
+  const d=n.code?n.complexity/n.code:0;
+  return `hsl(${Math.max(0,130-d*900)} 55% 28%)`;
 }
+
+function render(){
+  const node=current();
+  renderCrumbs();
+  const tree=document.querySelector('#tree');
+  tree.innerHTML='';
+  const children=(node.children||[]).slice().sort((a,b)=>b.code-a.code);
+  if(!children.length){ tree.innerHTML='<div class="empty">No entries.</div>'; return; }
+  const max=children.reduce((m,c)=>Math.max(m,c.code),1);
+  for(const c of children){
+    const el=document.createElement(c.isFile?'section':'button');
+    el.className='tile '+(c.isFile?'file':'dir');
+    el.style.flexGrow=Math.max(c.code,1);
+    el.style.flexBasis=`${Math.max(130,520*c.code/max)}px`;
+    el.style.background=densityColor(c);
+    el.title=c.path||c.name;
+    const icon=c.isFile?'📄':'📁';
+    const files=c.isFile?'':` · ${countFiles(c)} files`;
+    el.innerHTML=`<div class="name"><span class="icon">${icon}</span><span></span></div>`+
+      `<div class="stats">${c.code} loc · c${c.complexity} · max ${c.maxComplexity}${files}</div>`;
+    el.querySelector('.name span:last-child').textContent=c.name;
+    if(!c.isFile) el.addEventListener('click',()=>{ stack.push(c); render(); });
+    tree.appendChild(el);
+  }
+}
+
+function renderCrumbs(){
+  const c=document.querySelector('#crumbs');
+  c.innerHTML='';
+  stack.forEach((n,i)=>{
+    if(i) c.insertAdjacentHTML('beforeend','<span class="sep">/</span>');
+    const b=document.createElement('button');
+    b.textContent=n.name;
+    b.addEventListener('click',()=>{ stack=stack.slice(0,i+1); render(); });
+    c.appendChild(b);
+  });
+}
+
+render();
 </script>
 </html>
