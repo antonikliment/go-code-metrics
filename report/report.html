@@ -12,8 +12,8 @@
   #crumbs button { background:none; border:none; color:#93c5fd; cursor:pointer; padding:2px 4px; font:inherit; border-radius:4px }
   #crumbs button:hover { background:#ffffff11; text-decoration:underline }
   #crumbs .sep { color:#6b7280 }
-  #tree { display:flex; flex-wrap:wrap; gap:6px; align-content:flex-start }
-  .tile { box-sizing:border-box; min-width:120px; min-height:80px; padding:10px; overflow:hidden;
+  #tree { position:relative; width:100%; height:72vh; min-height:360px }
+  .tile { box-sizing:border-box; position:absolute; padding:10px; overflow:hidden;
           border:1px solid #ffffff22; border-radius:6px; text-align:left; color:inherit; font:inherit; display:block }
   .tile.dir { cursor:pointer }
   .tile.dir:hover { border-color:#ffffff77; outline:1px solid #ffffff33 }
@@ -45,6 +45,43 @@ function densityColor(n){
   return `hsl(${Math.max(0,130-d*900)} 55% 28%)`;
 }
 
+// Squarified treemap (Bruls, Huizing & van Wijk 2000): lay out `items`
+// (weight-sorted, descending) inside rect, keeping tiles near-square.
+function squarify(items,rect){
+  const out=[];
+  const total=items.reduce((s,i)=>s+i.weight,0)||1;
+  let free={...rect};
+  let scale=(free.w*free.h)/total;
+  let queue=items.slice();
+  const worst=(row,side,sum)=>{
+    const a=scale, s2=sum*a;
+    const max=row[0].weight*a, min=row[row.length-1].weight*a;
+    return Math.max(side*side*max/(s2*s2), s2*s2/(side*side*min));
+  };
+  while(queue.length){
+    const side=Math.min(free.w,free.h);
+    const row=[]; let sum=0;
+    while(queue.length){
+      const next=queue[0];
+      const trial=[...row,next], trialSum=sum+next.weight;
+      if(row.length && worst(row,side,sum)<worst(trial,side,trialSum)) break;
+      row.push(next); sum=trialSum; queue.shift();
+    }
+    const rowLen=sum*scale/side; // thickness of the strip
+    let offset=0;
+    for(const item of row){
+      const len=(item.weight*scale)/rowLen;
+      if(free.w>=free.h) out.push({item,x:free.x,y:free.y+offset,w:rowLen,h:len});
+      else out.push({item,x:free.x+offset,y:free.y,w:len,h:rowLen});
+      offset+=len;
+    }
+    if(free.w>=free.h){ free.x+=rowLen; free.w-=rowLen; }
+    else { free.y+=rowLen; free.h-=rowLen; }
+    if(free.w<=0||free.h<=0) break;
+  }
+  return out;
+}
+
 function render(){
   const node=current();
   renderCrumbs();
@@ -52,14 +89,17 @@ function render(){
   tree.innerHTML='';
   const children=(node.children||[]).slice().sort((a,b)=>b.code-a.code);
   if(!children.length){ tree.innerHTML='<div class="empty">No entries.</div>'; return; }
-  const max=children.reduce((m,c)=>Math.max(m,c.code),1);
-  for(const c of children){
+  const rect={x:0,y:0,w:tree.clientWidth,h:tree.clientHeight};
+  const items=children.map(c=>({node:c,weight:Math.max(c.code,1)}));
+  for(const cell of squarify(items,rect)){
+    const c=cell.item.node;
     const el=document.createElement(c.isFile?'section':'button');
     el.className='tile '+(c.isFile?'file':'dir');
-    el.style.flexGrow=Math.max(c.code,1);
-    el.style.flexBasis=`${Math.max(130,520*c.code/max)}px`;
+    const gap=3;
+    el.style.left=`${cell.x+gap}px`; el.style.top=`${cell.y+gap}px`;
+    el.style.width=`${Math.max(0,cell.w-gap*2)}px`; el.style.height=`${Math.max(0,cell.h-gap*2)}px`;
     el.style.background=densityColor(c);
-    el.title=c.path||c.name;
+    el.title=`${c.path||c.name} — ${c.code} loc · c${c.complexity}`;
     const icon=c.isFile?'📄':'📁';
     const files=c.isFile?'':` · ${countFiles(c)} files`;
     el.innerHTML=`<div class="name"><span class="icon">${icon}</span><span></span></div>`+
@@ -83,5 +123,6 @@ function renderCrumbs(){
 }
 
 render();
+addEventListener('resize',render);
 </script>
 </html>
