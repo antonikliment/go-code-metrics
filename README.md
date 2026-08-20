@@ -127,39 +127,14 @@ jobs:
 Downstream projects that pin the tool can replace `go run ./cmd/sizeanalyzer`
 with `go tool sizeanalyzer`.
 
-### Woodpecker CI
-
-`.woodpecker/pr-metrics.yaml` is the equivalent pipeline. Woodpecker clones
-shallow by default, so override the clone depth for `merge-base`, and fetch the
-target branch before analysis:
-
-```yaml
-when:
-  - event: pull_request
-
-clone:
-  git:
-    image: woodpeckerci/plugin-git
-    settings:
-      depth: 0
-
-steps:
-  metrics:
-    image: golang:1.26
-    commands:
-      - git fetch --no-tags origin "$CI_COMMIT_TARGET_BRANCH"
-      - go run ./cmd/sizeanalyzer -pr -base "origin/$CI_COMMIT_TARGET_BRANCH" -html pr-metrics.html
-```
-
-Woodpecker has no built-in per-run artifact store. To publish the HTML report,
-add a storage step (for example `woodpeckerci/plugin-s3`) and provide its
-credentials as repo secrets. `.woodpecker/ci.yaml` additionally mirrors the
-GitHub Actions `test` + `lint` jobs.
-
 ## Go LOC budget
 
-`goclocbudget` is one feature in the module. It enforces a repository-wide Go
-implementation line budget using the shared analysis engine.
+`goclocbudget` is one feature in the module. It enforces repository-wide and
+path-specific Go implementation line budgets using the shared analysis engine.
+Path budgets include the entire directory tree, so one budget can cover several
+Go packages. In a monorepo, a parent `go.work` defines the repository root; a
+repository root without a `go.mod` or `go.work` is also supported. Only exceeded
+budgets produce lint diagnostics.
 
 Add the plugin to `.custom-gcl.yml`:
 
@@ -190,6 +165,13 @@ linters:
         description: "Enforces the implementation Go LOC budget using gocloc."
         settings:
           max-go-code-lines: 10000
+          path-budgets:
+            agent:
+              max-go-code-lines: 6000
+            provider:
+              max-go-code-lines: 2500
+            capability/memory:
+              max-go-code-lines: 5000
           include-tests: false
           exclude-generated: true
           exclude-dirs:

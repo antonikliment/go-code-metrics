@@ -31,30 +31,87 @@ func TestCountExcludesTestsGeneratedAndConfiguredDirs(t *testing.T) {
 	}
 }
 
-func TestModuleRootFindsParent(t *testing.T) {
+func TestCountPathBudgetsIncludeWholeTrees(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "agent/agent.go", "package agent\nfunc Agent() {}\n")
+	writeTestFile(t, root, "agent/loop/loop.go", "package loop\nfunc Loop() {}\n")
+	writeTestFile(t, root, "provider/provider.go", "package provider\nfunc Provider() {}\n")
+	p := plugin{settings: settings{PathBudgets: map[string]budget{
+		"agent":      {MaxGoCodeLines: 10},
+		"agent/loop": {MaxGoCodeLines: 10},
+		"provider":   {MaxGoCodeLines: 10},
+	}}}
+
+	result, err := p.count(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.paths["agent"] != 4 || result.paths["agent/loop"] != 2 || result.paths["provider"] != 2 {
+		t.Fatalf("path counts = %#v", result.paths)
+	}
+}
+
+func TestRepositoryRootFindsParentModule(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, root, "go.mod", "module example.com/test\n")
 	nested := filepath.Join(root, "cmd", "tool")
 	if err := os.MkdirAll(nested, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	got, err := moduleRoot(nested)
+	got, err := repositoryRoot(nested)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != root {
-		t.Fatalf("moduleRoot = %q, want %q", got, root)
+		t.Fatalf("repositoryRoot = %q, want %q", got, root)
+	}
+}
+
+func TestRepositoryRootPrefersWorkspaceForMonorepo(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "go.work", "go 1.26\nuse ./services/api\n")
+	writeTestFile(t, root, "services/api/go.mod", "module example.com/api\n")
+
+	got, err := repositoryRoot(filepath.Join(root, "services", "api"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != root {
+		t.Fatalf("repositoryRoot = %q, want workspace %q", got, root)
+	}
+}
+
+func TestRepositoryRootSupportsMonorepoWithoutRootModule(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, ".git/HEAD", "ref: refs/heads/main\n")
+	writeTestFile(t, root, "services/api/go.mod", "module example.com/api\n")
+	nested := filepath.Join(root, "services", "api")
+
+	got, err := repositoryRoot(nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != root {
+		t.Fatalf("repositoryRoot = %q, want repository %q", got, root)
 	}
 }
 
 func TestNewExcludesGeneratedByDefault(t *testing.T) {
-	created, err := New(map[string]any{"max-go-code-lines": 1})
+	created, err := New(map[string]any{
+		"max-go-code-lines": 1,
+		"path-budgets": map[string]any{
+			"agent/": map[string]any{"max-go-code-lines": 2},
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := created.(*plugin)
 	if p.settings.ExcludeGenerated != nil {
 		t.Fatal("unset exclude-generated should use the default")
+	}
+	if p.settings.PathBudgets["agent"].MaxGoCodeLines != 2 {
+		t.Fatalf("path budgets = %#v", p.settings.PathBudgets)
 	}
 }
 
