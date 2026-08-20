@@ -173,7 +173,7 @@ func generated(path string) bool {
 	if err != nil {
 		return false
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	scanner := bufio.NewScanner(file)
 	for line := 0; line < 12 && scanner.Scan(); line++ {
 		if generatedLine.MatchString(scanner.Text()) {

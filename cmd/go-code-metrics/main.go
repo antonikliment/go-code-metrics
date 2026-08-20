@@ -39,7 +39,7 @@ func run(args []string, out io.Writer) error {
 		if result.Created {
 			status = "created"
 		}
-		fmt.Fprintf(out, "%s: %s\n", status, result.Path)
+		_, _ = fmt.Fprintf(out, "%s: %s\n", status, result.Path)
 	}
 	return nil
 }

@@ -107,10 +107,10 @@ func materializeSnapshots(root, mergeBase string, changes []gitChange) (string, 
 	}
 	headDir, err := os.MkdirTemp("", "go-code-metrics-head-")
 	if err != nil {
-		os.RemoveAll(baseDir)
+		_ = os.RemoveAll(baseDir)
 		return "", "", func() {}, err
 	}
-	cleanup := func() { os.RemoveAll(baseDir); os.RemoveAll(headDir) }
+	cleanup := func() { _ = os.RemoveAll(baseDir); _ = os.RemoveAll(headDir) }
 	for _, change := range changes {
 		if change.oldRepo != "" {
 			data, err := gitBytes(root, "show", mergeBase+":"+filepath.ToSlash(change.oldRepo))
