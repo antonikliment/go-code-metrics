@@ -23,8 +23,8 @@ done
 dir=${1:-.}
 shift || true
 [ "${1:-}" = "--" ] && shift
-version=${GCM_VERSION:-latest}
 ref=${GCM_REF:-main}
+version=${GCM_VERSION:-$ref}
 cd "$dir"
 [ -f go.mod ] || { echo "no go.mod in $dir" >&2; exit 1; }
 
@@ -84,12 +84,20 @@ fi
 lint_cap strip
 
 wf=.github/workflows/loc-budget.yml
-if [ -f "$wf" ]; then
-  echo "keep: $wf"
-else
-  mkdir -p .github/workflows
-  branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || echo main)
-  cat > "$wf" <<EOF
+# The workflow is generated, so a re-run rewrites it. Reusable workflows are
+# pinned to the commit the ref names, as workflow audits (zizmor) require.
+sha=$ref
+if ! [[ $ref =~ ^[0-9a-f]{40}$ ]]; then
+  sha=$(git ls-remote https://github.com/antonikliment/go-code-metrics.git "refs/heads/$ref" "refs/tags/$ref" | head -1 | cut -f1)
+  [ -n "$sha" ] || { echo "cannot resolve go-code-metrics ref $ref" >&2; exit 1; }
+fi
+# With the app, writes go through its token; github.token only reads.
+main_perms="contents: read"
+[ $app = 1 ] || main_perms="contents: write
+      issues: write"
+mkdir -p .github/workflows
+branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || echo main)
+cat > "$wf" <<EOF
 name: loc-budget
 
 on:
@@ -100,6 +108,8 @@ on:
   push:
     branches: [${branch}]
 
+permissions: {}
+
 concurrency:
   group: loc-budget-\${{ github.event.pull_request.number || github.ref }}
 
@@ -109,12 +119,14 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: antonikliment/go-code-metrics/.github/workflows/budget-pr.yml@${ref}
+    uses: antonikliment/go-code-metrics/.github/workflows/budget-pr.yml@${sha} # ${ref}
     with:
       version: ${version}
   main:
     if: github.event_name == 'push'
-    uses: antonikliment/go-code-metrics/.github/workflows/budget-main.yml@${ref}
+    permissions:
+      ${main_perms}
+    uses: antonikliment/go-code-metrics/.github/workflows/budget-main.yml@${sha} # ${ref}
     with:
       version: ${version}
     secrets:
@@ -122,8 +134,7 @@ jobs:
       app-key: \${{ secrets.LINE_WARDEN_APP_KEY }}
       token: \${{ secrets.LOC_BUDGET_TOKEN }}
 EOF
-  echo "created: $wf"
-fi
+echo "wrote: $wf (go-code-metrics ${ref} = ${sha:0:7})"
 
 have_gh=0
 command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && have_gh=1
