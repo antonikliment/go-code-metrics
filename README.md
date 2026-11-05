@@ -230,7 +230,15 @@ Install on a repository (seeds the ledger from current usage, writes
 
 ```bash
 scripts/setup-budget.sh path/to/repo -- -areas cmd,internal   # areas default to top-level dirs
+scripts/setup-budget.sh --app path/to/repo                    # also register the line-warden app
 ```
+
+`--app` registers a private GitHub App (`line-warden`, override with
+`APP_NAME`) from a manifest: a localhost page posts the manifest to GitHub,
+the callback code is exchanged for the app id and key, which are stored as
+`LINE_WARDEN_APP_ID` / `LINE_WARDEN_APP_KEY`, and the script offers to add the
+app to each branch ruleset's bypass list. Installing the app on the repo and
+uploading an icon stay manual.
 
 Reusable workflows:
 
@@ -239,7 +247,8 @@ Reusable workflows:
   or the `loc-raise` label is set; a push removes the label.
 - `budget-main.yml` runs on push to the default branch, raises the ledger to
   what main measures, commits it, and updates the issue labelled
-  `loc-budgets`. Its token needs a ruleset bypass to push. Create the
+  `loc-budgets`. It mints a token from the line-warden app (`app-id`,
+  `app-key`) or takes a `token`; either needs a ruleset bypass to push. Create the
   `loc-budgets` and `loc-raise` labels first.
 
 ```yaml

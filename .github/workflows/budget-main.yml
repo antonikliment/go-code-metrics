@@ -15,20 +15,41 @@ on:
         type: string
         default: .loc-budgets.json
     secrets:
+      app-id:
+        description: line-warden GitHub App id; with app-key, mints the push token
+        required: false
+      app-key:
+        description: line-warden GitHub App private key
+        required: false
       token:
-        description: token that can push to the default branch and edit issues
-        required: true
+        description: fallback token (PAT) that can push to the default branch and edit issues
+        required: false
 
 jobs:
   raise:
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.token }}
+      HAS_APP: ${{ secrets.app-id != '' }}
       TOOL: github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@${{ inputs.version }}
     steps:
+      - id: app
+        if: env.HAS_APP == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-key }}
+      - id: tok
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          PAT: ${{ secrets.token }}
+        run: |
+          t=${APP_TOKEN:-$PAT}
+          [ -n "$t" ] || { echo "set app-id/app-key or token" >&2; exit 1; }
+          echo "::add-mask::$t"
+          echo "token=$t" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          token: ${{ secrets.token }}
+          token: ${{ steps.tok.outputs.token }}
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: stable
@@ -37,11 +58,13 @@ jobs:
         run: |
           go-code-metrics budget raise -ledger ${{ inputs.ledger }}
           git diff --quiet -- ${{ inputs.ledger }} && exit 0
-          git config user.name "loc-budget[bot]"
-          git config user.email "loc-budget[bot]@users.noreply.github.com"
+          git config user.name "line-warden[bot]"
+          git config user.email "line-warden[bot]@users.noreply.github.com"
           git commit -m "LoC budgets: raise to main after ${GITHUB_SHA::7}" -- ${{ inputs.ledger }}
           git push
       - name: dashboard
+        env:
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
         run: |
           { echo "Current \`${GITHUB_REF_NAME}\` LoC usage, updated by budget-main at ${GITHUB_SHA::7}."; echo
             go-code-metrics budget report -ledger ${{ inputs.ledger }}; } > body.md
