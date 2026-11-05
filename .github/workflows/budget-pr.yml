@@ -32,12 +32,22 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: refs/pull/${{ github.event.pull_request.number }}/merge
-          path: pr
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
           ref: ${{ github.event.pull_request.base.ref }}
           path: base
+      # refs/pull/N/merge lags behind base until GitHub recomputes it, which
+      # would measure the PR on a stale base and pass a raise it should not.
+      # Merge the head onto the base just checked out instead.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          fetch-depth: 0
+      - working-directory: pr
+        run: |
+          git fetch -q ../base HEAD
+          git -c user.name=ci -c user.email=ci@invalid merge -q --no-edit FETCH_HEAD \
+            || { echo "PR conflicts with ${{ github.event.pull_request.base.ref }}; rebase it" >&2; exit 1; }
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: stable
