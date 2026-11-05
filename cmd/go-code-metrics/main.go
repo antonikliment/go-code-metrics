@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,13 +14,19 @@ import (
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, errOverBudget) {
+			os.Exit(3)
+		}
 		os.Exit(1)
 	}
 }
 
 func run(args []string, out io.Writer) error {
+	if len(args) > 0 && args[0] == "budget" {
+		return runBudget(args[1:], out)
+	}
 	if len(args) == 0 || args[0] != "install" {
-		return fmt.Errorf("usage: go-code-metrics install [-root directory]")
+		return fmt.Errorf("usage: go-code-metrics install [-root directory] | budget ...")
 	}
 	flags := flag.NewFlagSet("install", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)

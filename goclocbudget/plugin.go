@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	metrics "github.com/antonikliment/go-code-metrics/analysis"
+	"github.com/antonikliment/go-code-metrics/budget"
 	"github.com/golangci/plugin-module-register/register"
 	"golang.org/x/tools/go/analysis"
 )
@@ -24,6 +25,9 @@ type settings struct {
 	IncludeTests     bool     `json:"include-tests"`
 	ExcludeGenerated *bool    `json:"exclude-generated"`
 	ExcludeDirs      []string `json:"exclude-dirs"`
+	// Ledger, relative to the module root, supplies the ceiling and
+	// exclude-dirs instead of the fields above.
+	Ledger string `json:"ledger"`
 }
 
 type plugin struct {
@@ -37,8 +41,8 @@ func New(raw any) (register.LinterPlugin, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.MaxGoCodeLines <= 0 {
-		return nil, fmt.Errorf("max-go-code-lines must be positive")
+	if cfg.MaxGoCodeLines <= 0 && cfg.Ledger == "" {
+		return nil, fmt.Errorf("max-go-code-lines must be positive, or set ledger")
 	}
 	return &plugin{settings: cfg}, nil
 }
@@ -62,6 +66,11 @@ func (p *plugin) run(pass *analysis.Pass) (any, error) {
 			p.runErr = err
 			return
 		}
+		if p.settings.Ledger != "" {
+			if p.runErr = p.applyLedger(root); p.runErr != nil {
+				return
+			}
+		}
 		result, err := p.count(root)
 		if err != nil {
 			p.runErr = err
@@ -73,6 +82,17 @@ func (p *plugin) run(pass *analysis.Pass) (any, error) {
 		}
 	})
 	return nil, p.runErr
+}
+
+func (p *plugin) applyLedger(root string) error {
+	l, err := budget.Load(filepath.Join(root, p.settings.Ledger))
+	if err != nil {
+		return err
+	}
+	p.settings.MaxGoCodeLines = l.Global
+	p.settings.ExcludeDirs = l.ExcludeDirs
+	p.settings.IncludeTests = l.IncludeTests
+	return nil
 }
 
 type countResult struct {

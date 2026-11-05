@@ -68,3 +68,19 @@ func writeTestFile(t *testing.T, root string, name string, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestLedgerSuppliesCeilingAndExcludes(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, ".loc-budgets.json", `{"global": 7, "exclude-dirs": ["bench"]}`)
+	created, err := New(map[string]any{"ledger": ".loc-budgets.json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := created.(*plugin)
+	if err := p.applyLedger(root); err != nil {
+		t.Fatal(err)
+	}
+	if p.settings.MaxGoCodeLines != 7 || len(p.settings.ExcludeDirs) != 1 {
+		t.Fatalf("settings = %+v", p.settings)
+	}
+}

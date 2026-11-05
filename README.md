@@ -205,3 +205,44 @@ Build and run:
 golangci-lint custom
 ./custom-golangci-lint run
 ```
+
+## Budget ledger
+
+`.loc-budgets.json` holds the global ceiling and per-area ceilings (longest
+path prefix wins). Pull requests never edit it; only the main-branch workflow
+does, so concurrent PRs do not conflict on budget numbers.
+
+```json
+{"global": 40000, "areas": {"cmd": 2500, "cmd/ui": 6800}, "exclude-dirs": ["vendor"]}
+```
+
+```bash
+go-code-metrics budget report [-root .] [-base-root ../main]  # table, optional delta column
+go-code-metrics budget check  ...                             # exit 3 when a ceiling is exceeded
+go-code-metrics budget raise  ...                             # lift ceilings to measured usage
+```
+
+The lint plugin reads the same file with `ledger: .loc-budgets.json` in place
+of `max-go-code-lines`.
+
+Reusable workflows:
+
+- `budget-pr.yml` measures the PR merged onto the latest base and posts a
+  sticky table. A raise passes once a write+ reviewer approves the head commit
+  or the `loc-raise` label is set; a push removes the label.
+- `budget-main.yml` runs on push to the default branch, raises the ledger to
+  what main measures, commits it, and updates the issue labelled
+  `loc-budgets`. Its token needs a ruleset bypass to push. Create the
+  `loc-budgets` and `loc-raise` labels first.
+
+```yaml
+# caller: .github/workflows/loc-budget.yml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted, dismissed]
+jobs:
+  budget:
+    uses: antonikliment/go-code-metrics/.github/workflows/budget-pr.yml@main
+```
