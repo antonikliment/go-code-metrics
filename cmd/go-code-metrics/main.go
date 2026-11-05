@@ -26,7 +26,7 @@ func run(args []string, out io.Writer) error {
 		return runBudget(args[1:], out)
 	}
 	if len(args) == 0 || args[0] != "install" {
-		return fmt.Errorf("usage: go-code-metrics install [-root directory] | budget report|check|raise")
+		return fmt.Errorf("usage: go-code-metrics install [-root directory] | budget report|check|sync")
 	}
 	flags := flag.NewFlagSet("install", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)

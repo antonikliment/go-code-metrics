@@ -219,7 +219,7 @@ does, so concurrent PRs do not conflict on budget numbers.
 ```bash
 go-code-metrics budget report [-root .] [-base-root ../main]  # table, optional delta column
 go-code-metrics budget check  ...                             # exit 3 when a ceiling is exceeded
-go-code-metrics budget raise  ...                             # lift ceilings to measured usage
+go-code-metrics budget sync   ...                             # set ceilings to measured usage
 ```
 
 Drop `goclocbudget` from lint in a repo that uses the ledger: a hardcoded cap
@@ -246,7 +246,7 @@ Reusable workflows:
   sticky table. A raise passes once someone with at least `approver-role`
   (default `maintain`) approves the head commit or adds the `loc-raise` label;
   a label from anyone below that role is removed, and a push removes it too.
-- `budget-main.yml` runs on push to the default branch, raises the ledger to
+- `budget-main.yml` runs on push to the default branch, syncs the ledger to
   what main measures, commits it, and updates the issue labelled
   `loc-budgets`. It mints a token from the line-warden app (`app-id`,
   `app-key`) or takes a `token`; either needs a ruleset bypass to push. Create the

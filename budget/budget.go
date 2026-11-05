@@ -100,18 +100,16 @@ func Check(u Usage, l Ledger) []Overrun {
 	return out
 }
 
-// Raise lifts each ceiling to the measured usage; ceilings never drop.
-func Raise(l Ledger, u Usage) (Ledger, bool) {
+// Sync sets every ceiling to the measured usage, so removed lines take their
+// headroom with them and any later growth needs approval again.
+func Sync(l Ledger, u Usage) (Ledger, bool) {
 	areas := make(map[string]int, len(l.Areas))
-	changed := false
+	changed := l.Global != u.Global
 	for area, ceiling := range l.Areas {
-		areas[area] = max(ceiling, u.Areas[area])
+		areas[area] = u.Areas[area]
 		changed = changed || areas[area] != ceiling
 	}
-	l.Areas = areas
-	if u.Global > l.Global {
-		l.Global, changed = u.Global, true
-	}
+	l.Areas, l.Global = areas, u.Global
 	return l, changed
 }
 

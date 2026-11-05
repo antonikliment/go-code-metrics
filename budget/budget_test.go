@@ -41,7 +41,7 @@ func TestMeasureAssignsLongestPrefix(t *testing.T) {
 	}
 }
 
-func TestCheckAndRaise(t *testing.T) {
+func TestCheckAndSync(t *testing.T) {
 	l := Ledger{Global: 5, Areas: map[string]int{"a": 3, "b": 3}}
 	u := Usage{Global: 6, Areas: map[string]int{"a": 4, "b": 1}}
 
@@ -50,15 +50,15 @@ func TestCheckAndRaise(t *testing.T) {
 		t.Fatalf("overruns = %+v", over)
 	}
 
-	raised, changed := Raise(l, u)
-	if !changed || raised.Global != 6 || raised.Areas["a"] != 4 || raised.Areas["b"] != 3 {
-		t.Fatalf("raised = %+v changed=%v", raised, changed)
+	synced, changed := Sync(l, u)
+	if !changed || synced.Global != 6 || synced.Areas["a"] != 4 || synced.Areas["b"] != 1 {
+		t.Fatalf("synced = %+v changed=%v", synced, changed)
 	}
 	if l.Areas["a"] != 3 {
-		t.Fatal("Raise mutated its input")
+		t.Fatal("Sync mutated its input")
 	}
-	if _, changed := Raise(raised, u); changed {
-		t.Fatal("second raise reported a change")
+	if _, changed := Sync(synced, u); changed {
+		t.Fatal("second sync reported a change")
 	}
 }
 

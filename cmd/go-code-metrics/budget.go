@@ -12,12 +12,12 @@ import (
 	"github.com/antonikliment/go-code-metrics/budget"
 )
 
-const budgetUsage = "usage: go-code-metrics budget init|report|check|raise [-root dir] [-ledger file] [-base-root dir] [-areas a,b] [-exclude d,e]"
+const budgetUsage = "usage: go-code-metrics budget init|report|check|sync [-root dir] [-ledger file] [-base-root dir] [-areas a,b] [-exclude d,e]"
 
 var errOverBudget = errors.New("over budget")
 
 // runBudget: report prints the table; check also fails on any overrun;
-// raise rewrites the ledger so every ceiling covers the measured tree.
+// sync rewrites the ledger so every ceiling equals the measured tree.
 func runBudget(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(budgetUsage)
@@ -54,13 +54,13 @@ func runBudget(args []string, out io.Writer) error {
 			return err
 		}
 		return checkOverruns(out, budget.Check(u, l))
-	case "raise":
-		raised, changed := budget.Raise(l, u)
+	case "sync":
+		synced, changed := budget.Sync(l, u)
 		if !changed {
-			_, err := fmt.Fprintln(out, "ceilings already cover the tree")
+			_, err := fmt.Fprintln(out, "ceilings already match the tree")
 			return err
 		}
-		return raised.Save(*ledgerPath)
+		return synced.Save(*ledgerPath)
 	}
 	return errors.New(budgetUsage)
 }
@@ -92,7 +92,7 @@ func checkOverruns(out io.Writer, over []budget.Overrun) error {
 
 func initLedger(out io.Writer, root, path, areas, exclude string) error {
 	if _, err := os.Stat(path); err == nil {
-		return fmt.Errorf("%s exists; edit it or run raise", path)
+		return fmt.Errorf("%s exists; edit it or run sync", path)
 	}
 	l := budget.Ledger{Areas: map[string]int{}, ExcludeDirs: splitList(exclude)}
 	for _, a := range splitList(areas) {
