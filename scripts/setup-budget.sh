@@ -8,7 +8,8 @@
 # go to a loc-budget branch and a pull request.
 # Usage: scripts/setup-budget.sh [--app] [--pr] [repo-dir] [-- extra `budget init` flags]
 # Env: GCM_VERSION (tool version), GCM_REF (workflow ref), GCM_BIN (local binary),
-# APP_NAME, APP_PORT, APP_BYPASS=yes (add ruleset bypasses without asking).
+# APP_NAME, APP_PORT, APP_BYPASS=yes (add ruleset bypasses without asking),
+# APP_FORCE=1 (register a new app even if one is configured).
 set -euo pipefail
 
 app=0 pr=0
@@ -144,6 +145,13 @@ register_app() {
   owner=${repo%%/*}
   name=${APP_NAME:-line-warden}
   port=${APP_PORT:-8765}
+  # Re-runs reuse a registered, configured app; APP_FORCE=1 registers anew.
+  if [ -z "${APP_FORCE:-}" ] && gh secret list --json name --jq '.[].name' | grep -qx LINE_WARDEN_APP_ID &&
+    app_id=$(gh api "apps/$name" --jq .id 2>/dev/null); then
+    echo "keep: app $name (id $app_id) and its secrets; APP_FORCE=1 registers a new one"
+    add_bypass "$repo" "$app_id"
+    return
+  fi
   state=$(python3 -I -c 'import secrets; print(secrets.token_hex(16))')
   if [ "$(gh api "users/$owner" --jq .type)" = Organization ]; then
     target="https://github.com/organizations/$owner/settings/apps/new?state=$state"
