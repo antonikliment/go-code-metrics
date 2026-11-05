@@ -4,7 +4,8 @@
 # also registers the line-warden GitHub App from a manifest and stores its
 # credentials as repository secrets.
 # Usage: scripts/setup-budget.sh [--app] [repo-dir] [-- extra `budget init` flags]
-# Env: GCM_VERSION (tool version), GCM_BIN (local binary), APP_NAME, APP_PORT.
+# Env: GCM_VERSION (tool version), GCM_REF (workflow ref), GCM_BIN (local binary),
+# APP_NAME, APP_PORT.
 set -euo pipefail
 
 app=0
@@ -13,6 +14,7 @@ dir=${1:-.}
 shift || true
 [ "${1:-}" = "--" ] && shift
 version=${GCM_VERSION:-latest}
+ref=${GCM_REF:-main}
 cd "$dir"
 [ -f go.mod ] || { echo "no go.mod in $dir" >&2; exit 1; }
 
@@ -50,12 +52,12 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: antonikliment/go-code-metrics/.github/workflows/budget-pr.yml@main
+    uses: antonikliment/go-code-metrics/.github/workflows/budget-pr.yml@${ref}
     with:
       version: ${version}
   main:
     if: github.event_name == 'push'
-    uses: antonikliment/go-code-metrics/.github/workflows/budget-main.yml@main
+    uses: antonikliment/go-code-metrics/.github/workflows/budget-main.yml@${ref}
     with:
       version: ${version}
     secrets:
