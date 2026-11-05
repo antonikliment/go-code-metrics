@@ -5,7 +5,7 @@
 # credentials as repository secrets.
 # Usage: scripts/setup-budget.sh [--app] [repo-dir] [-- extra `budget init` flags]
 # Env: GCM_VERSION (tool version), GCM_REF (workflow ref), GCM_BIN (local binary),
-# APP_NAME, APP_PORT.
+# APP_NAME, APP_PORT, APP_BYPASS=yes (add ruleset bypasses without asking).
 set -euo pipefail
 
 app=0
@@ -154,8 +154,9 @@ add_bypass() {
     if jq -e --argjson a "$app_id" '.bypass_actors // [] | any(.actor_type == "Integration" and .actor_id == $a)' <<<"$rs" >/dev/null; then
       continue
     fi
-    read -r -p "Add $(jq -r .name <<<"$rs") ruleset bypass for the app? [y/N] " yn
-    [ "$yn" = y ] || continue
+    yn=${APP_BYPASS:-}
+    [ -n "$yn" ] || read -r -p "Add $(jq -r .name <<<"$rs") ruleset bypass for the app? [y/N] " yn
+    [ "$yn" = y ] || [ "$yn" = yes ] || continue
     jq --argjson a "$app_id" '{bypass_actors: ((.bypass_actors // []) + [{actor_id: $a, actor_type: "Integration", bypass_mode: "always"}])}' <<<"$rs" |
       gh api -X PUT "repos/$repo/rulesets/$id" --input - >/dev/null && echo "bypass added to ruleset $id"
   done
