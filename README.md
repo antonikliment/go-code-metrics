@@ -225,6 +225,13 @@ go-code-metrics budget raise  ...                             # lift ceilings to
 The lint plugin reads the same file with `ledger: .loc-budgets.json` in place
 of `max-go-code-lines`.
 
+Install on a repository (seeds the ledger from current usage, writes
+`.github/workflows/loc-budget.yml`, creates the labels):
+
+```bash
+scripts/setup-budget.sh path/to/repo -- -areas cmd,internal   # areas default to top-level dirs
+```
+
 Reusable workflows:
 
 - `budget-pr.yml` measures the PR merged onto the latest base and posts a

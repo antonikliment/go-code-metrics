@@ -47,3 +47,34 @@ func TestBudgetCheckAndRaise(t *testing.T) {
 		t.Fatalf("after raise: %v\n%s", err, out.String())
 	}
 }
+
+func TestBudgetInitSeedsTopLevelDirs(t *testing.T) {
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"go.mod":      "module m\n",
+		"a/a.go":      "package a\n\nvar A = 1\n",
+		"b/c/b.go":    "package c\n\nvar B = 1\n",
+		"vendor/v.go": "package v\n\nvar V = 1\n",
+	} {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	if err := run([]string{"budget", "init", "-root", root}, &out); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(root, ".loc-budgets.json"))
+	for _, want := range []string{`"global": 4`, `"a": 2`, `"b": 2`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("missing %s in %s", want, data)
+		}
+	}
+	if err := run([]string{"budget", "init", "-root", root}, &out); err == nil {
+		t.Fatal("second init overwrote the ledger")
+	}
+}

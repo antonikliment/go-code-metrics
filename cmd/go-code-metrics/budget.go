@@ -5,13 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/antonikliment/go-code-metrics/budget"
 )
 
-const budgetUsage = "usage: go-code-metrics budget report|check|raise [-root dir] [-ledger file] [-base-root dir]"
+const budgetUsage = "usage: go-code-metrics budget init|report|check|raise [-root dir] [-ledger file] [-base-root dir] [-areas a,b] [-exclude d,e]"
 
 var errOverBudget = errors.New("over budget")
 
@@ -26,11 +27,16 @@ func runBudget(args []string, out io.Writer) error {
 	root := flags.String("root", ".", "tree to measure")
 	ledgerPath := flags.String("ledger", "", "ledger file (default <root>/.loc-budgets.json)")
 	baseRoot := flags.String("base-root", "", "base tree for a delta column")
+	areas := flags.String("areas", "", "init: comma-separated area prefixes (default: top-level dirs)")
+	exclude := flags.String("exclude", "vendor,.git,node_modules", "init: comma-separated excluded dirs")
 	if err := flags.Parse(args[1:]); err != nil || flags.NArg() != 0 {
 		return errors.New(budgetUsage)
 	}
 	if *ledgerPath == "" {
 		*ledgerPath = filepath.Join(*root, ".loc-budgets.json")
+	}
+	if args[0] == "init" {
+		return initLedger(out, *root, *ledgerPath, *areas, *exclude)
 	}
 	l, err := budget.Load(*ledgerPath)
 	if err != nil {
@@ -82,4 +88,32 @@ func checkOverruns(out io.Writer, over []budget.Overrun) error {
 		return err
 	}
 	return errOverBudget
+}
+
+func initLedger(out io.Writer, root, path, areas, exclude string) error {
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("%s exists; edit it or run raise", path)
+	}
+	l := budget.Ledger{Areas: map[string]int{}, ExcludeDirs: splitList(exclude)}
+	for _, a := range splitList(areas) {
+		l.Areas[a] = 0
+	}
+	l, err := budget.Seed(root, l)
+	if err != nil {
+		return err
+	}
+	if err := l.Save(path); err != nil {
+		return err
+	}
+	return budget.RenderMarkdown(out, l, budget.Usage{Global: l.Global, Areas: l.Areas}, nil)
+}
+
+func splitList(s string) []string {
+	var out []string
+	for _, v := range strings.Split(s, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }

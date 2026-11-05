@@ -158,3 +158,31 @@ func sortedKeys(m map[string]int) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// Seed sets every ceiling to current usage. With no areas it budgets each
+// top-level directory that holds counted code.
+func Seed(root string, l Ledger) (Ledger, error) {
+	if len(l.Areas) == 0 {
+		tree, err := analysis.Analyze(analysis.Options{
+			Root: root, IncludeTests: l.IncludeTests, ExcludeGenerated: true, ExcludeDirs: l.ExcludeDirs,
+		})
+		if err != nil {
+			return Ledger{}, err
+		}
+		l.Areas = map[string]int{}
+		for _, f := range analysis.Files(tree) {
+			if dir, _, ok := strings.Cut(filepath.ToSlash(f.Path), "/"); ok {
+				l.Areas[dir] = 0
+			}
+		}
+	}
+	u, err := Measure(root, l)
+	if err != nil {
+		return Ledger{}, err
+	}
+	l.Global = u.Global
+	for area := range l.Areas {
+		l.Areas[area] = u.Areas[area]
+	}
+	return l, nil
+}
