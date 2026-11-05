@@ -205,3 +205,61 @@ Build and run:
 golangci-lint custom
 ./custom-golangci-lint run
 ```
+
+## Budget ledger
+
+`.loc-budgets.json` holds the global ceiling and per-area ceilings (longest
+path prefix wins). Pull requests never edit it; only the main-branch workflow
+does, so concurrent PRs do not conflict on budget numbers.
+
+```json
+{"global": 40000, "areas": {"cmd": 2500, "cmd/ui": 6800}, "exclude-dirs": ["vendor"]}
+```
+
+```bash
+go-code-metrics budget report [-root .] [-base-root ../main]  # table, optional delta column
+go-code-metrics budget check  ...                             # exit 3 when a ceiling is exceeded
+go-code-metrics budget sync   ...                             # set ceilings to measured usage
+```
+
+Drop `goclocbudget` from lint in a repo that uses the ledger: a hardcoded cap
+would fail every approved raise, and `budget-pr` is the gate.
+
+Install on a repository (seeds the ledger from current usage, writes
+`.github/workflows/loc-budget.yml`, creates the labels):
+
+```bash
+scripts/setup-budget.sh path/to/repo -- -areas cmd,internal   # areas default to top-level dirs
+scripts/setup-budget.sh --app path/to/repo                    # also register the line-warden app
+```
+
+`--app` registers a private GitHub App (`line-warden`, override with
+`APP_NAME`) from a manifest: a localhost page posts the manifest to GitHub,
+the callback code is exchanged for the app id and key, which are stored as
+`LINE_WARDEN_APP_ID` / `LINE_WARDEN_APP_KEY`, and the script offers to add the
+app to each branch ruleset's bypass list. Installing the app on the repo and
+uploading an icon stay manual.
+
+Reusable workflows:
+
+- `budget-pr.yml` measures the PR merged onto the latest base and posts a
+  sticky table. A raise passes once someone with at least `approver-role`
+  (default `maintain`) approves the head commit or adds the `loc-raise` label;
+  a label from anyone below that role is removed, and a push removes it too.
+- `budget-main.yml` runs on push to the default branch, syncs the ledger to
+  what main measures, commits it, and updates the issue labelled
+  `loc-budgets`. It mints a token from the line-warden app (`app-id`,
+  `app-key`) or takes a `token`; either needs a ruleset bypass to push. Create the
+  `loc-budgets` and `loc-raise` labels first.
+
+```yaml
+# caller: .github/workflows/loc-budget.yml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  pull_request_review:
+    types: [submitted, dismissed]
+jobs:
+  budget:
+    uses: antonikliment/go-code-metrics/.github/workflows/budget-pr.yml@main
+```

@@ -1,0 +1,139 @@
+# Reusable: checks a PR (merged onto the latest base) against the base ledger.
+# A raise passes once a write+ reviewer approves the head commit, or the
+# `loc-raise` label is set (sole maintainers cannot approve their own PRs).
+# Caller triggers: pull_request [opened, synchronize, reopened, labeled, unlabeled]
+# and pull_request_review [submitted, dismissed].
+name: budget-pr
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: go-code-metrics module version
+        type: string
+        default: latest
+      ledger:
+        type: string
+        default: .loc-budgets.json
+      approver-role:
+        description: lowest repository role whose review or loc-raise label approves a raise (write, maintain or admin)
+        type: string
+        default: maintain
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  budget:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      TOOL: github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          path: base
+      # refs/pull/N/merge lags behind base until GitHub recomputes it, which
+      # would measure the PR on a stale base and pass a raise it should not.
+      # Merge the head onto the base just checked out instead.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: pr
+          fetch-depth: 0
+      - working-directory: pr
+        run: |
+          git fetch -q ../base HEAD
+          git -c user.name=ci -c user.email=ci@invalid merge -q --no-edit FETCH_HEAD \
+            || { echo "PR conflicts with ${{ github.event.pull_request.base.ref }}; rebase it" >&2; exit 1; }
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: stable
+      - run: go install "$TOOL"
+      # A push invalidates a label approval, as it does a stale review. Only a
+      # label already set at push time is removed: one added after the push
+      # (racing this run) approves the new head.
+      - if: github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'loc-raise')
+        run: gh pr edit "$PR" --remove-label loc-raise || true
+      - id: check
+        run: |
+          set +e
+          # The PR that installs the ledger has none on the base yet.
+          ledger=base/${{ inputs.ledger }}
+          [ -f "$ledger" ] || { ledger=pr/${{ inputs.ledger }}; echo "_Ledger introduced by this PR._"; echo; } > budget.md
+          go-code-metrics budget check -root pr -ledger "$ledger" -base-root base >> budget.md 2>&1
+          echo "over=$?" >> "$GITHUB_OUTPUT"
+      - id: approval
+        if: steps.check.outputs.over == '3'
+        env:
+          APPROVER_ROLE: ${{ inputs.approver-role }}
+        run: |
+          # Labels need only triage access and reviews only a collaborator, so
+          # the approver's role is checked; anything unreadable fails closed.
+          rank() { case "$1" in admin) echo 3 ;; maintain) echo 2 ;; write) echo 1 ;; *) echo 0 ;; esac; }
+          need=$(rank "$APPROVER_ROLE")
+          [ "$need" -gt 0 ] || { echo "approver-role must be write, maintain or admin" >&2; exit 1; }
+          allowed() {
+            local role
+            role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$1/permission" --jq .role_name 2>/dev/null) || role=none
+            echo "$1: $role" >&2
+            [ "$(rank "$role")" -ge "$need" ]
+          }
+          ok=false
+          for u in $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" --paginate --slurp | jq -r '
+            [.[][]] | group_by(.user.login) | map(last)
+            | .[] | select(.state == "APPROVED" and .commit_id == env.HEAD_SHA) | .user.login'); do
+            allowed "$u" && { ok=true; echo "by=review by @$u" >> "$GITHUB_OUTPUT"; break; }
+          done
+          labeler=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/events" --paginate --slurp | jq -r '
+            [.[][] | select(.event == "labeled" and .label.name == "loc-raise")] | last | .actor.login // empty')
+          if [ "$ok" = false ] && [ -n "$labeler" ] && gh pr view "$PR" --json labels --jq '[.labels[].name] | index("loc-raise") != null' | grep -q true; then
+            if allowed "$labeler"; then
+              ok=true; echo "by=loc-raise by @$labeler" >> "$GITHUB_OUTPUT"
+            else
+              gh pr edit "$PR" --remove-label loc-raise || true
+              echo "denied=loc-raise added by @$labeler, who is below $APPROVER_ROLE; label removed" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+      - if: steps.check.outputs.over != '0' && steps.check.outputs.over != '3'
+        run: |
+          cat budget.md
+          echo "budget check errored (exit ${{ steps.check.outputs.over }})"
+          exit 1
+      - name: comment
+        continue-on-error: true
+        env:
+          OK: ${{ steps.approval.outputs.ok }}
+          BY: ${{ steps.approval.outputs.by }}
+          DENIED: ${{ steps.approval.outputs.denied }}
+          APPROVER_ROLE: ${{ inputs.approver-role }}
+        run: |
+          {
+            echo '<!-- loc-budget -->'
+            echo '### LoC budget (vs latest base)'
+            cat budget.md
+            if [ "${{ steps.check.outputs.over }}" = 3 ]; then
+              if [ "$OK" = true ]; then echo "**Raise approved** ($BY)."
+              else
+                [ -n "$DENIED" ] && echo "**Approval refused:** $DENIED."
+                echo "**Raise needs approval:** a $APPROVER_ROLE+ approves the head commit or adds \`loc-raise\`."
+              fi
+            fi
+          } > body.md
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- loc-budget -->")) | .id' | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@body.md
+          else
+            gh pr comment "$PR" --body-file body.md
+          fi
+      - if: steps.check.outputs.over == '3' && steps.approval.outputs.ok != 'true'
+        run: |
+          cat budget.md
+          exit 1

@@ -1,0 +1,73 @@
+# Reusable: after a merge, set ceilings to what main now measures and publish
+# the table to the issue labelled `loc-budgets`. Only this job edits the
+# ledger, so PRs never conflict on it. The token must be allowed to push to
+# the default branch (a ruleset bypass for the app).
+# Caller trigger: push to the default branch; use a concurrency group.
+name: budget-main
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: latest
+      ledger:
+        type: string
+        default: .loc-budgets.json
+    secrets:
+      app-id:
+        description: line-warden GitHub App id; with app-key, mints the push token
+        required: false
+      app-key:
+        description: line-warden GitHub App private key
+        required: false
+      token:
+        description: token that can push to the default branch and edit issues; default github.token (needs contents and issues write, no branch protection)
+        required: false
+
+jobs:
+  raise:
+    runs-on: ubuntu-latest
+    env:
+      HAS_APP: ${{ secrets.app-id != '' }}
+      TOOL: github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@${{ inputs.version }}
+    steps:
+      - id: app
+        if: env.HAS_APP == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-key }}
+      - id: tok
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          PAT: ${{ secrets.token || github.token }}
+        run: |
+          t=${APP_TOKEN:-$PAT}
+          [ -n "$t" ] || { echo "set app-id/app-key or token" >&2; exit 1; }
+          echo "::add-mask::$t"
+          echo "token=$t" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          token: ${{ steps.tok.outputs.token }}
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: stable
+      - run: go install "$TOOL"
+      - name: raise
+        run: |
+          go-code-metrics budget sync -ledger ${{ inputs.ledger }}
+          git diff --quiet -- ${{ inputs.ledger }} && exit 0
+          git config user.name "line-warden[bot]"
+          git config user.email "line-warden[bot]@users.noreply.github.com"
+          git commit -m "LoC budgets: sync to main after ${GITHUB_SHA::7}" -- ${{ inputs.ledger }}
+          git push
+      - name: dashboard
+        env:
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
+        run: |
+          { echo "Current \`${GITHUB_REF_NAME}\` LoC usage, updated by budget-main at ${GITHUB_SHA::7}."; echo
+            go-code-metrics budget report -ledger ${{ inputs.ledger }}; } > body.md
+          n=$(gh issue list --label loc-budgets --state open --json number --jq '.[0].number')
+          if [ -n "$n" ]; then gh issue edit "$n" --body-file body.md
+          else gh issue create --title "LoC budgets (${GITHUB_REF_NAME})" --label loc-budgets --body-file body.md; fi
