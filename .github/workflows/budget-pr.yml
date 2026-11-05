@@ -42,8 +42,10 @@ jobs:
         with:
           go-version: stable
       - run: go install "$TOOL"
-      # A push invalidates a label approval, as it does a stale review.
-      - if: github.event.action == 'synchronize'
+      # A push invalidates a label approval, as it does a stale review. Only a
+      # label already set at push time is removed: one added after the push
+      # (racing this run) approves the new head.
+      - if: github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'loc-raise')
         run: gh pr edit "$PR" --remove-label loc-raise || true
       - id: check
         run: |
