@@ -15,6 +15,10 @@ on:
       ledger:
         type: string
         default: .loc-budgets.json
+      approver-role:
+        description: lowest repository role whose review or loc-raise label approves a raise (write, maintain or admin)
+        type: string
+        default: maintain
 
 permissions:
   contents: read
@@ -67,13 +71,37 @@ jobs:
           echo "over=$?" >> "$GITHUB_OUTPUT"
       - id: approval
         if: steps.check.outputs.over == '3'
+        env:
+          APPROVER_ROLE: ${{ inputs.approver-role }}
         run: |
-          approved=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" --paginate --slurp | jq '
-            [.[][] | select(.author_association | IN("OWNER","MEMBER","COLLABORATOR"))]
-            | group_by(.user.login) | map(last)
-            | map(select(.state == "APPROVED" and .commit_id == env.HEAD_SHA)) | length')
-          labeled=$(gh pr view "$PR" --json labels --jq '[.labels[].name] | index("loc-raise") != null')
-          [ "$approved" -gt 0 ] || [ "$labeled" = true ] && echo ok=true >> "$GITHUB_OUTPUT" || echo ok=false >> "$GITHUB_OUTPUT"
+          # Labels need only triage access and reviews only a collaborator, so
+          # the approver's role is checked; anything unreadable fails closed.
+          rank() { case "$1" in admin) echo 3 ;; maintain) echo 2 ;; write) echo 1 ;; *) echo 0 ;; esac; }
+          need=$(rank "$APPROVER_ROLE")
+          [ "$need" -gt 0 ] || { echo "approver-role must be write, maintain or admin" >&2; exit 1; }
+          allowed() {
+            local role
+            role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$1/permission" --jq .role_name 2>/dev/null) || role=none
+            echo "$1: $role" >&2
+            [ "$(rank "$role")" -ge "$need" ]
+          }
+          ok=false
+          for u in $(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR/reviews" --paginate --slurp | jq -r '
+            [.[][]] | group_by(.user.login) | map(last)
+            | .[] | select(.state == "APPROVED" and .commit_id == env.HEAD_SHA) | .user.login'); do
+            allowed "$u" && { ok=true; echo "by=review by @$u" >> "$GITHUB_OUTPUT"; break; }
+          done
+          labeler=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/events" --paginate --slurp | jq -r '
+            [.[][] | select(.event == "labeled" and .label.name == "loc-raise")] | last | .actor.login // empty')
+          if [ "$ok" = false ] && [ -n "$labeler" ] && gh pr view "$PR" --json labels --jq '[.labels[].name] | index("loc-raise") != null' | grep -q true; then
+            if allowed "$labeler"; then
+              ok=true; echo "by=loc-raise by @$labeler" >> "$GITHUB_OUTPUT"
+            else
+              gh pr edit "$PR" --remove-label loc-raise || true
+              echo "denied=loc-raise added by @$labeler, who is below $APPROVER_ROLE; label removed" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
       - if: steps.check.outputs.over != '0' && steps.check.outputs.over != '3'
         run: |
           cat budget.md
@@ -81,14 +109,22 @@ jobs:
           exit 1
       - name: comment
         continue-on-error: true
+        env:
+          OK: ${{ steps.approval.outputs.ok }}
+          BY: ${{ steps.approval.outputs.by }}
+          DENIED: ${{ steps.approval.outputs.denied }}
+          APPROVER_ROLE: ${{ inputs.approver-role }}
         run: |
           {
             echo '<!-- loc-budget -->'
             echo '### LoC budget (vs latest base)'
             cat budget.md
             if [ "${{ steps.check.outputs.over }}" = 3 ]; then
-              [ "${{ steps.approval.outputs.ok }}" = true ] && echo '**Raise approved.**' \
-                || echo '**Raise needs approval:** approve the head commit or add `loc-raise`.'
+              if [ "$OK" = true ]; then echo "**Raise approved** ($BY)."
+              else
+                [ -n "$DENIED" ] && echo "**Approval refused:** $DENIED."
+                echo "**Raise needs approval:** a $APPROVER_ROLE+ approves the head commit or adds \`loc-raise\`."
+              fi
             fi
           } > body.md
           id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- loc-budget -->")) | .id' | head -1)
