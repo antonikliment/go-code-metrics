@@ -60,7 +60,10 @@ jobs:
       - id: check
         run: |
           set +e
-          go-code-metrics budget check -root pr -ledger base/${{ inputs.ledger }} -base-root base > budget.md
+          # The PR that installs the ledger has none on the base yet.
+          ledger=base/${{ inputs.ledger }}
+          [ -f "$ledger" ] || { ledger=pr/${{ inputs.ledger }}; echo "_Ledger introduced by this PR._"; echo; } > budget.md
+          go-code-metrics budget check -root pr -ledger "$ledger" -base-root base >> budget.md 2>&1
           echo "over=$?" >> "$GITHUB_OUTPUT"
       - id: approval
         if: steps.check.outputs.over == '3'
