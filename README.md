@@ -222,8 +222,8 @@ go-code-metrics budget check  ...                             # exit 3 when a ce
 go-code-metrics budget raise  ...                             # lift ceilings to measured usage
 ```
 
-The lint plugin reads the same file with `ledger: .loc-budgets.json` in place
-of `max-go-code-lines`.
+Drop `goclocbudget` from lint in a repo that uses the ledger: a hardcoded cap
+would fail every approved raise, and `budget-pr` is the gate.
 
 Install on a repository (seeds the ledger from current usage, writes
 `.github/workflows/loc-budget.yml`, creates the labels):
