@@ -215,7 +215,10 @@ print(H.code)')
 }
 
 add_bypass() {
-  local repo=$1 app_id=$2 id
+  local repo=$1 app_id=$2 id installed
+  # GitHub rejects a whole bypass list that names a deleted or uninstalled
+  # app, so stale Integration entries are dropped on write.
+  installed=$(gh api "orgs/${repo%%/*}/installations" --paginate --jq '[.installations[].app_id]' 2>/dev/null | jq -s 'add // []' || echo null)
   for id in $(gh api "repos/$repo/rulesets" --jq '.[] | select(.target == "branch") | .id'); do
     local rs
     rs=$(gh api "repos/$repo/rulesets/$id")
@@ -225,7 +228,9 @@ add_bypass() {
     yn=${APP_BYPASS:-}
     [ -n "$yn" ] || read -r -p "Add $(jq -r .name <<<"$rs") ruleset bypass for the app? [y/N] " yn
     [ "$yn" = y ] || [ "$yn" = yes ] || continue
-    jq --argjson a "$app_id" '{bypass_actors: ((.bypass_actors // []) + [{actor_id: $a, actor_type: "Integration", bypass_mode: "always"}])}' <<<"$rs" |
+    jq --argjson a "$app_id" --argjson live "$installed" '{bypass_actors: (
+        [(.bypass_actors // [])[] | select(.actor_type != "Integration" or $live == null or (.actor_id as $i | $live | index($i)))]
+        + [{actor_id: $a, actor_type: "Integration", bypass_mode: "always"}])}' <<<"$rs" |
       gh api -X PUT "repos/$repo/rulesets/$id" --input - --jq '"bypass added to ruleset \(.id)"' ||
       echo "bypass not added to ruleset $id (see the error above; is the app installed?)" >&2
   done
@@ -235,12 +240,16 @@ add_bypass() {
 
 open_pr() {
   [ $have_gh = 1 ] || { echo "--pr needs an authenticated gh" >&2; exit 1; }
-  git checkout -q -b loc-budget
+  [ "$(git branch --show-current)" = loc-budget ] || git checkout -q -B loc-budget
   git add .loc-budgets.json "$wf"
   [ -f .golangci.yml ] && git add .golangci.yml
-  git commit -q -m "LoC budgets: ledger and loc-budget workflow" \
+  git diff --cached --quiet || git commit -q -m "LoC budgets: ledger and loc-budget workflow" \
     -m "Ceilings live in .loc-budgets.json, raised after merge by the loc-budget workflow; PRs never edit them. The goclocbudget linter's hardcoded cap is removed: the loc-budget PR check is the gate."
-  git push -q -u origin loc-budget
+  git push -q -u --force-with-lease origin loc-budget
+  if gh pr view loc-budget --json url --jq .url 2>/dev/null; then
+    echo "keep: open pull request above"
+    return
+  fi
   gh pr create --fill --body "$(cat <<'EOF'
 Adds the LoC budget ledger (`.loc-budgets.json`, seeded from current usage) and the `loc-budget` workflow from go-code-metrics. Ceilings are raised by the workflow after each merge, so PRs never edit budget numbers. A raise in a PR passes once a maintainer approves the head commit or adds `loc-raise`. The goclocbudget linter's hardcoded cap is removed in favour of that check.
 
