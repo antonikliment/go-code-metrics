@@ -243,8 +243,9 @@ uploading an icon stay manual.
 Reusable workflows:
 
 - `budget-pr.yml` measures the PR merged onto the latest base and posts a
-  sticky table. A raise passes once a write+ reviewer approves the head commit
-  or the `loc-raise` label is set; a push removes the label.
+  sticky table. A raise passes once someone with at least `approver-role`
+  (default `maintain`) approves the head commit or adds the `loc-raise` label;
+  a label from anyone below that role is removed, and a push removes it too.
 - `budget-main.yml` runs on push to the default branch, raises the ledger to
   what main measures, commits it, and updates the issue labelled
   `loc-budgets`. It mints a token from the line-warden app (`app-id`,
