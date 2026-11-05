@@ -22,7 +22,7 @@ on:
         description: line-warden GitHub App private key
         required: false
       token:
-        description: fallback token (PAT) that can push to the default branch and edit issues
+        description: token that can push to the default branch and edit issues; default github.token (needs contents and issues write, no branch protection)
         required: false
 
 jobs:
@@ -41,7 +41,7 @@ jobs:
       - id: tok
         env:
           APP_TOKEN: ${{ steps.app.outputs.token }}
-          PAT: ${{ secrets.token }}
+          PAT: ${{ secrets.token || github.token }}
         run: |
           t=${APP_TOKEN:-$PAT}
           [ -n "$t" ] || { echo "set app-id/app-key or token" >&2; exit 1; }
