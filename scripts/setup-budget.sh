@@ -142,7 +142,11 @@ print(H.code)')
   jq -r .pem <<<"$json" | gh secret set LINE_WARDEN_APP_KEY
   gh secret set LINE_WARDEN_APP_ID --body "$app_id"
   echo "registered app $slug (id $app_id); secrets LINE_WARDEN_APP_ID and LINE_WARDEN_APP_KEY set"
-  echo "Install it on $repo: https://github.com/apps/$slug/installations/new"
+  # A ruleset accepts the app as a bypass actor only once it is installed.
+  local install="https://github.com/apps/$slug/installations/new"
+  echo "Install it on $repo (only that repository): $install"
+  command -v xdg-open >/dev/null && xdg-open "$install" >/dev/null 2>&1 || true
+  read -r -p "Press Enter once the app is installed... " _
   add_bypass "$repo" "$app_id"
 }
 
@@ -158,7 +162,8 @@ add_bypass() {
     [ -n "$yn" ] || read -r -p "Add $(jq -r .name <<<"$rs") ruleset bypass for the app? [y/N] " yn
     [ "$yn" = y ] || [ "$yn" = yes ] || continue
     jq --argjson a "$app_id" '{bypass_actors: ((.bypass_actors // []) + [{actor_id: $a, actor_type: "Integration", bypass_mode: "always"}])}' <<<"$rs" |
-      gh api -X PUT "repos/$repo/rulesets/$id" --input - >/dev/null && echo "bypass added to ruleset $id"
+      gh api -X PUT "repos/$repo/rulesets/$id" --input - --jq '"bypass added to ruleset \(.id)"' ||
+      echo "bypass not added to ruleset $id (see the error above; is the app installed?)" >&2
   done
 }
 
