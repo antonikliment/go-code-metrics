@@ -238,7 +238,10 @@ scripts/setup-budget.sh --app path/to/repo                    # also register th
 the callback code is exchanged for the app id and key, which are stored as
 `LINE_WARDEN_APP_ID` / `LINE_WARDEN_APP_KEY`, and the script offers to add the
 app to each branch ruleset's bypass list. Installing the app on the repo and
-uploading an icon stay manual.
+uploading an icon stay manual. Once the workflow is on the default branch, a
+re-run offers to make `pr / budget` a required check (`REQUIRE_CHECK=yes`
+answers without asking). Re-runs reuse a configured app and an open
+`loc-budget` pull request.
 
 Reusable workflows:
 
@@ -249,7 +252,8 @@ Reusable workflows:
 - `budget-main.yml` runs on push to the default branch, syncs the ledger to
   what main measures, commits it, and updates the issue labelled
   `loc-budgets`. It mints a token from the line-warden app (`app-id`,
-  `app-key`) or takes a `token`; either needs a ruleset bypass to push. Create the
+  `app-key`) or takes a `token`; either needs a ruleset bypass to push. The
+  ledger is committed through the contents API, so GitHub signs the commit. Create the
   `loc-budgets` and `loc-raise` labels first.
 
 ```yaml

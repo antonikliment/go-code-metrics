@@ -9,6 +9,7 @@
 # Usage: scripts/setup-budget.sh [--app] [--pr] [repo-dir] [-- extra `budget init` flags]
 # Env: GCM_VERSION (tool version), GCM_REF (workflow ref), GCM_BIN (local binary),
 # APP_NAME, APP_PORT, APP_BYPASS=yes (add ruleset bypasses without asking),
+# REQUIRE_CHECK=yes (make "pr / budget" required without asking),
 # APP_FORCE=1 (register a new app even if one is configured).
 set -euo pipefail
 
@@ -249,26 +250,60 @@ add_bypass() {
 
 [ $app = 1 ] && register_app
 
+# The PR check is "<caller job> / <reusable job>": pr / budget. Requiring it
+# before the workflow is on the default branch would block every other PR.
+require_check() {
+  local repo id rs
+  repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+  if ! gh api "repos/$repo/contents/$wf" --silent 2>/dev/null; then
+    echo "after the workflow is merged, re-run to require the pr / budget check"
+    return
+  fi
+  for id in $(gh api "repos/$repo/rulesets" --jq '.[] | select(.target == "branch") | .id' 2>/dev/null); do
+    rs=$(gh api "repos/$repo/rulesets/$id")
+    if jq -e '[.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context] | index("pr / budget")' <<<"$rs" >/dev/null; then
+      continue
+    fi
+    yn=${REQUIRE_CHECK:-}
+    [ -n "$yn" ] || read -r -p "Require the pr / budget check in the $(jq -r .name <<<"$rs") ruleset? [y/N] " yn
+    [ "$yn" = y ] || [ "$yn" = yes ] || continue
+    jq '{rules: (if any(.rules[]; .type == "required_status_checks")
+          then .rules | map(if .type == "required_status_checks"
+            then .parameters.required_status_checks += [{context: "pr / budget"}] else . end)
+          else .rules + [{type: "required_status_checks", parameters: {
+            required_status_checks: [{context: "pr / budget"}], strict_required_status_checks_policy: false}}] end)}' <<<"$rs" |
+      gh api -X PUT "repos/$repo/rulesets/$id" --input - --jq '"pr / budget required in ruleset \(.id)"' ||
+      echo "check not required in ruleset $id (see the error above)" >&2
+  done
+}
+[ $have_gh = 1 ] && require_check
+
 open_pr() {
   [ $have_gh = 1 ] || { echo "--pr needs an authenticated gh" >&2; exit 1; }
   [ "$(git branch --show-current)" = loc-budget ] || git checkout -q -B loc-budget
   git add .loc-budgets.json "$wf"
   [ -f .golangci.yml ] && git add .golangci.yml
-  git diff --cached --quiet || git commit -q -m "LoC budgets: ledger and loc-budget workflow" \
-    -m "Ceilings live in .loc-budgets.json, raised after merge by the loc-budget workflow; PRs never edit them. The goclocbudget linter's hardcoded cap is removed: the loc-budget PR check is the gate."
+  local title body
+  if git cat-file -e "origin/$branch:.loc-budgets.json" 2>/dev/null; then
+    title="Pin loc-budget to go-code-metrics $ref"
+    body="Re-pins the loc-budget reusable workflows to go-code-metrics $ref (${sha:0:7})."
+  else
+    title="LoC budgets: ledger and loc-budget workflow"
+    body=$(cat <<'EOF'
+Adds the LoC budget ledger (`.loc-budgets.json`, seeded from current usage) and the `loc-budget` workflow from go-code-metrics. Ceilings are synced to main by the workflow after each merge, so PRs never edit budget numbers. A raise in a PR passes once a maintainer approves the head commit or adds `loc-raise`. The goclocbudget linter's hardcoded cap is removed in favour of that check.
+
+After merge, re-run the setup script to require the `pr / budget` check, and turn on "dismiss stale approvals".
+EOF
+)
+  fi
+  git diff --cached --quiet || git commit -q -m "$title"
   git push -q -u --force-with-lease origin loc-budget
-  if gh pr view loc-budget --json url --jq .url 2>/dev/null; then
+  # gh pr view also finds merged and closed PRs for the branch.
+  if gh pr view loc-budget --json state,url --jq 'select(.state == "OPEN") | .url' 2>/dev/null | grep .; then
     echo "keep: open pull request above"
     return
   fi
-  gh pr create --fill --body "$(cat <<'EOF'
-Adds the LoC budget ledger (`.loc-budgets.json`, seeded from current usage) and the `loc-budget` workflow from go-code-metrics. Ceilings are raised by the workflow after each merge, so PRs never edit budget numbers. A raise in a PR passes once a maintainer approves the head commit or adds `loc-raise`. The goclocbudget linter's hardcoded cap is removed in favour of that check.
-
-After merge:
-- require the `loc-budget / pr` check in the default-branch ruleset;
-- turn on "dismiss stale approvals".
-EOF
-)"
+  gh pr create --title "$title" --body "$body"
 }
 [ $pr = 1 ] && open_pr
 
@@ -279,7 +314,7 @@ Remaining by hand:
      issues:write) allowed to bypass the default-branch ruleset.
      With --app: install the app (link above), check the bypass was added, and
      optionally upload an icon in the app settings (manifests cannot set one).
-  2. Require the "loc-budget / pr" check in the ruleset; turn on
-     "dismiss stale approvals" so a push re-asks for a raise approval.
+  2. Once the workflow is merged, re-run to require the "pr / budget" check;
+     turn on "dismiss stale approvals" so a push re-asks for a raise approval.
   3. Without --pr: commit .loc-budgets.json, the workflow and .golangci.yml.
 EOF

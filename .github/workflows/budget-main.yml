@@ -54,14 +54,21 @@ jobs:
         with:
           go-version: stable
       - run: go install "$TOOL"
-      - name: raise
+      # Committing through the contents API, not git push, makes GitHub sign the
+      # commit as the token's app, so it passes a signed-commits rule as verified.
+      - name: sync
+        env:
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
+          LEDGER: ${{ inputs.ledger }}
         run: |
-          go-code-metrics budget sync -ledger ${{ inputs.ledger }}
-          git diff --quiet -- ${{ inputs.ledger }} && exit 0
-          git config user.name "line-warden[bot]"
-          git config user.email "line-warden[bot]@users.noreply.github.com"
-          git commit -m "LoC budgets: sync to main after ${GITHUB_SHA::7}" -- ${{ inputs.ledger }}
-          git push
+          go-code-metrics budget sync -ledger "$LEDGER"
+          git diff --quiet -- "$LEDGER" && exit 0
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/$LEDGER" \
+            -f message="LoC budgets: sync to main after ${GITHUB_SHA::7}" \
+            -f content="$(base64 -w0 "$LEDGER")" \
+            -f sha="$(git rev-parse "HEAD:$LEDGER")" \
+            -f branch="$GITHUB_REF_NAME" --jq '"committed \(.commit.sha[:7]) verified=\(.commit.verification.verified)"'
+
       - name: dashboard
         env:
           GH_TOKEN: ${{ steps.tok.outputs.token }}
