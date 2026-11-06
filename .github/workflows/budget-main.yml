@@ -1,5 +1,6 @@
 # Reusable: after a merge, set ceilings to what main now measures and publish
-# the table to the issue labelled `loc-budgets`. Only this job edits the
+# the table to the job summary. With dashboard-issue, the same table also
+# goes to the issue labelled `loc-budgets`. Only this job edits the
 # ledger, so PRs never conflict on it. The token must be allowed to push to
 # the default branch (a ruleset bypass for the app).
 # Caller trigger: push to the default branch; use a concurrency group.
@@ -14,6 +15,10 @@ on:
       ledger:
         type: string
         default: .loc-budgets.json
+      dashboard-issue:
+        description: also publish the table to the issue labelled loc-budgets
+        type: boolean
+        default: false
     secrets:
       app-id:
         description: line-warden GitHub App id; with app-key, mints the push token
@@ -22,7 +27,7 @@ on:
         description: line-warden GitHub App private key
         required: false
       token:
-        description: token that can push to the default branch and edit issues; default github.token (needs contents and issues write, no branch protection)
+        description: token that can push to the default branch, and edit issues when dashboard-issue is on; default github.token (needs contents write, issues write only with dashboard-issue, no branch protection)
         required: false
 
 jobs:
@@ -69,12 +74,19 @@ jobs:
             -f sha="$(git rev-parse "HEAD:$LEDGER")" \
             -f branch="$GITHUB_REF_NAME" --jq '"committed \(.commit.sha[:7]) verified=\(.commit.verification.verified)"'
 
-      - name: dashboard
-        env:
-          GH_TOKEN: ${{ steps.tok.outputs.token }}
+      # The summary needs no repository permission and always shows the table
+      # for this commit, so it is the dashboard; the issue stays opt-in.
+      - name: summary
         run: |
           { echo "Current \`${GITHUB_REF_NAME}\` LoC usage, updated by budget-main at ${GITHUB_SHA::7}."; echo
             go-code-metrics budget report -ledger ${{ inputs.ledger }}; } > body.md
+          cat body.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: dashboard issue
+        if: inputs.dashboard-issue
+        env:
+          GH_TOKEN: ${{ steps.tok.outputs.token }}
+        run: |
           n=$(gh issue list --label loc-budgets --state open --json number --jq '.[0].number')
           if [ -n "$n" ]; then gh issue edit "$n" --body-file body.md
           else gh issue create --title "LoC budgets (${GITHUB_REF_NAME})" --label loc-budgets --body-file body.md; fi
