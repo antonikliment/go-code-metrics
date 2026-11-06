@@ -9,6 +9,8 @@
 # Usage: scripts/setup-budget.sh [--app] [--pr] [repo-dir] [-- extra `budget init` flags]
 # Env: GCM_VERSION (tool version), GCM_REF (workflow ref), GCM_BIN (local binary),
 # APP_NAME, APP_PORT, APP_BYPASS=yes (add ruleset bypasses without asking),
+# DASHBOARD_ISSUE=yes (also publish the dashboard to the loc-budgets issue; the
+# job summary always gets the table),
 # REQUIRE_CHECK=yes (make "pr / budget" required without asking),
 # APP_FORCE=1 (register a new app even if one is configured).
 set -euo pipefail
@@ -26,6 +28,10 @@ shift || true
 [ "${1:-}" = "--" ] && shift
 ref=${GCM_REF:-main}
 version=${GCM_VERSION:-$ref}
+# The job summary always holds the dashboard; DASHBOARD_ISSUE=yes adds the issue.
+dashboard_issue=false
+labels=loc-raise
+[ -z "${DASHBOARD_ISSUE:-}" ] || { dashboard_issue=true; labels="loc-raise and loc-budgets"; }
 cd "$dir"
 [ -f go.mod ] || { echo "no go.mod in $dir" >&2; exit 1; }
 
@@ -94,8 +100,11 @@ if ! [[ $ref =~ ^[0-9a-f]{40}$ ]]; then
 fi
 # With the app, writes go through its token; github.token only reads.
 main_perms="contents: read"
-[ $app = 1 ] || main_perms="contents: write
+[ $app = 1 ] || main_perms="contents: write"
+if [ $app != 1 ] && [ $dashboard_issue = true ]; then
+  main_perms="$main_perms
       issues: write"
+fi
 mkdir -p .github/workflows
 branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || echo main)
 cat > "$wf" <<EOF
@@ -130,6 +139,7 @@ jobs:
     uses: antonikliment/go-code-metrics/.github/workflows/budget-main.yml@${sha} # ${ref}
     with:
       version: ${version}
+      dashboard-issue: ${dashboard_issue}
     secrets:
       app-id: \${{ secrets.LINE_WARDEN_APP_ID }}
       app-key: \${{ secrets.LINE_WARDEN_APP_KEY }}
@@ -141,9 +151,11 @@ have_gh=0
 command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && have_gh=1
 if [ $have_gh = 1 ]; then
   gh label create loc-raise --color d93f0b --description "Approves a LoC budget raise" --force || echo "label loc-raise not created" >&2
-  gh label create loc-budgets --color 0e8a16 --description "LoC budget dashboard" --force || echo "label loc-budgets not created" >&2
+  if [ $dashboard_issue = true ]; then
+    gh label create loc-budgets --color 0e8a16 --description "LoC budget dashboard" --force || echo "label loc-budgets not created" >&2
+  fi
 else
-  echo "gh not authenticated: create labels loc-raise and loc-budgets by hand" >&2
+  echo "gh not authenticated: create labels $labels by hand" >&2
 fi
 
 # The manifest flow: the browser POSTs the manifest to GitHub, GitHub
@@ -310,8 +322,9 @@ EOF
 cat <<'EOF'
 
 Remaining by hand:
-  1. Without --app: secret LOC_BUDGET_TOKEN (fine-grained PAT, contents:write +
-     issues:write) allowed to bypass the default-branch ruleset.
+  1. Without --app: secret LOC_BUDGET_TOKEN (fine-grained PAT, contents:write,
+     plus issues:write with DASHBOARD_ISSUE=yes) allowed to bypass the default-branch
+     ruleset.
      With --app: install the app (link above), check the bypass was added, and
      optionally upload an icon in the app settings (manifests cannot set one).
   2. Once the workflow is merged, re-run to require the "pr / budget" check;

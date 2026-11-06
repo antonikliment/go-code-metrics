@@ -210,7 +210,9 @@ golangci-lint custom
 
 `.loc-budgets.json` holds the global ceiling and per-area ceilings (longest
 path prefix wins). Pull requests never edit it; only the main-branch workflow
-does, so concurrent PRs do not conflict on budget numbers.
+does, so concurrent PRs do not conflict on budget numbers. The usage table
+is the dashboard: `budget-main` appends it to the job summary of the push
+run on the default branch; an issue labelled `loc-budgets` is opt-in.
 
 ```json
 {"global": 40000, "areas": {"cmd": 2500, "cmd/ui": 6800}, "exclude-dirs": ["vendor"]}
@@ -231,6 +233,7 @@ Install on a repository (seeds the ledger from current usage, writes
 ```bash
 scripts/setup-budget.sh path/to/repo -- -areas cmd,internal   # areas default to top-level dirs
 scripts/setup-budget.sh --app path/to/repo                    # also register the line-warden app
+DASHBOARD_ISSUE=yes scripts/setup-budget.sh path/to/repo      # dashboard also as a loc-budgets issue
 ```
 
 `--app` registers a private GitHub App (`line-warden`, override with
@@ -250,11 +253,14 @@ Reusable workflows:
   (default `maintain`) approves the head commit or adds the `loc-raise` label;
   a label from anyone below that role is removed, and a push removes it too.
 - `budget-main.yml` runs on push to the default branch, syncs the ledger to
-  what main measures, commits it, and updates the issue labelled
+  what main measures and commits it, then appends the report table to the
+  job summary - that is where the dashboard lives. The `dashboard-issue`
+  input (`boolean`, default `false`) also updates the issue labelled
   `loc-budgets`. It mints a token from the line-warden app (`app-id`,
   `app-key`) or takes a `token`; either needs a ruleset bypass to push. The
-  ledger is committed through the contents API, so GitHub signs the commit. Create the
-  `loc-budgets` and `loc-raise` labels first.
+  ledger is committed through the contents API, so GitHub signs the commit.
+  Create the `loc-raise` label first, plus `loc-budgets` when the issue
+  dashboard is on.
 
 ```yaml
 # caller: .github/workflows/loc-budget.yml
