@@ -148,6 +148,9 @@ jobs:
     with:
       version: ${version}
       budgets-repo: ${budgets_repo}
+    secrets:
+      app-id: \${{ secrets.LINE_WARDEN_APP_ID }}
+      app-key: \${{ secrets.LINE_WARDEN_APP_KEY }}
   main:
     if: github.event_name == 'push'
     permissions:

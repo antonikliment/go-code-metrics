@@ -23,6 +23,13 @@ on:
         description: lowest repository role whose review or loc-raise label approves a raise (write, maintain or admin)
         type: string
         default: maintain
+    secrets:
+      app-id:
+        description: line-warden GitHub App id; with app-key, reads a private budgets repo
+        required: false
+      app-key:
+        description: line-warden GitHub App private key
+        required: false
 
 permissions:
   contents: read
@@ -32,6 +39,7 @@ jobs:
   budget:
     runs-on: ubuntu-latest
     env:
+      HAS_APP: ${{ secrets.app-id != '' }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
@@ -65,14 +73,27 @@ jobs:
       # (racing this run) approves the new head.
       - if: github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'loc-raise')
         run: gh pr edit "$PR" --remove-label loc-raise || true
+      - if: inputs.budgets-repo != '' && env.HAS_APP == 'true'
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-key }}
+          repositories: ${{ split(inputs.budgets-repo, '/')[1] }}
       - id: check
         run: |
           set +e
-          # With budgets-repo, the ledger is fetched there instead of read from base.
+          # budgets-repo: fetched with the app token when private, and a failed or empty fetch fails closed.
           ledger=base/${{ inputs.ledger }}
           if [ -n '${{ inputs.budgets-repo }}' ]; then
-            gh api "repos/${{ inputs.budgets-repo }}/contents/$GITHUB_REPOSITORY.json" --jq .content 2>/dev/null |
+            GH_TOKEN='${{ steps.token.outputs.token || github.token }}' \
+              gh api "repos/${{ inputs.budgets-repo }}/contents/$GITHUB_REPOSITORY.json" --jq .content 2>/dev/null |
               base64 -d > "$ledger"
+            if [ ! -s "$ledger" ]; then
+              { echo "Budgets file not readable from ${{ inputs.budgets-repo }}"; echo; } > budget.md
+              echo over=1 >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
           [ -s "$ledger" ] || { ledger=pr/${{ inputs.ledger }}; echo "_Ledger introduced by this PR._"; echo; } > budget.md
           go-code-metrics budget check -root pr -ledger "$ledger" -base-root base >> budget.md 2>&1
