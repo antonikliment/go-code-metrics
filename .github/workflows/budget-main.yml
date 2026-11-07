@@ -15,6 +15,10 @@ on:
       ledger:
         type: string
         default: .loc-budgets.json
+      budgets-repo:
+        description: separate repo of the same owner holding the ledger as <owner>/<repo>.json on its default branch (empty keeps it in this repo)
+        type: string
+        default: ''
       dashboard-issue:
         description: also publish the table to the issue labelled loc-budgets
         type: boolean
@@ -43,6 +47,9 @@ jobs:
         with:
           app-id: ${{ secrets.app-id }}
           private-key: ${{ secrets.app-key }}
+          # Bare names, same owner: budgets-repo must be a repository of this owner.
+          repositories: ${{ github.event.repository.name }}
+            ${{ inputs.budgets-repo != '' && split(inputs.budgets-repo, '/')[1] || '' }}
       - id: tok
         env:
           APP_TOKEN: ${{ steps.app.outputs.token }}
@@ -65,14 +72,26 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.tok.outputs.token }}
           LEDGER: ${{ inputs.ledger }}
+          BUDGETS_REPO: ${{ inputs.budgets-repo }}
         run: |
+          # budgets-repo holds it as <owner>/<repo>.json on its own default branch,
+          # so the PUT there takes no branch and no sha when it is new.
+          dst="$GITHUB_REPOSITORY/contents/$LEDGER"
+          branch="$GITHUB_REF_NAME"
+          if [ -n "$BUDGETS_REPO" ]; then
+            dst="$BUDGETS_REPO/contents/$GITHUB_REPOSITORY.json"
+            branch=
+            gh api "repos/$dst" --jq .content 2>/dev/null | base64 -d > old
+            sha=$(gh api "repos/$dst" --jq .sha 2>/dev/null) || sha=
+          else
+            cp "$LEDGER" old
+            sha=$(git rev-parse "HEAD:$LEDGER")
+          fi
           go-code-metrics budget sync -ledger "$LEDGER"
-          git diff --quiet -- "$LEDGER" && exit 0
-          gh api -X PUT "repos/$GITHUB_REPOSITORY/contents/$LEDGER" \
-            -f message="LoC budgets: sync to main after ${GITHUB_SHA::7}" \
-            -f content="$(base64 -w0 "$LEDGER")" \
-            -f sha="$(git rev-parse "HEAD:$LEDGER")" \
-            -f branch="$GITHUB_REF_NAME" --jq '"committed \(.commit.sha[:7]) verified=\(.commit.verification.verified)"'
+          cmp -s old "$LEDGER" && exit 0
+          gh api -X PUT "repos/$dst" -f message="LoC budgets: sync to main after ${GITHUB_SHA::7}" \
+            -f content="$(base64 -w0 "$LEDGER")" ${sha:+-f sha=$sha} ${branch:+-f branch=$branch} \
+            --jq '"committed \(.commit.sha[:7]) verified=\(.commit.verification.verified)"'
 
       # The summary needs no repository permission and always shows the table
       # for this commit, so it is the dashboard; the issue stays opt-in.

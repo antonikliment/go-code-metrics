@@ -5,8 +5,12 @@
 # credentials as repository secrets. A goclocbudget linter in .golangci.yml
 # is migrated: its exclude-dirs seed the ledger and the linter is removed,
 # since a hardcoded cap would fail every approved raise. With --pr the changes
-# go to a loc-budget branch and a pull request.
-# Usage: scripts/setup-budget.sh [--app] [--pr] [repo-dir] [-- extra `budget init` flags]
+# go to a loc-budget branch and a pull request. --budgets-repo owner/name keeps
+# the ledger in a separate repository of the same owner, as <owner>/<repo>.json
+# on its default branch; --migrate-budgets moves an existing in-repo ledger there
+# and removes the in-repo copy, leaving the code repository change for you to PR.
+# Usage: scripts/setup-budget.sh [--app] [--pr] [--budgets-repo owner/name |
+#   --migrate-budgets owner/name] [repo-dir] [-- extra `budget init` flags]
 # Env: GCM_VERSION (tool version), GCM_REF (workflow ref), GCM_BIN (local binary),
 # APP_NAME, APP_PORT, APP_BYPASS=yes (add ruleset bypasses without asking),
 # DASHBOARD_ISSUE=yes (also publish the dashboard to the loc-budgets issue; the
@@ -15,11 +19,13 @@
 # APP_FORCE=1 (register a new app even if one is configured).
 set -euo pipefail
 
-app=0 pr=0
+app=0 pr=0 migrate=0 budgets_repo=
 while :; do
   case "${1:-}" in
     --app) app=1; shift ;;
     --pr) pr=1; shift ;;
+    --budgets-repo) budgets_repo=${2:?--budgets-repo needs owner/name}; shift 2 ;;
+    --migrate-budgets) budgets_repo=${2:?--migrate-budgets needs owner/name}; migrate=1; shift 2 ;;
     *) break ;;
   esac
 done
@@ -34,6 +40,14 @@ labels=loc-raise
 [ -z "${DASHBOARD_ISSUE:-}" ] || { dashboard_issue=true; labels="loc-raise and loc-budgets"; }
 cd "$dir"
 [ -f go.mod ] || { echo "no go.mod in $dir" >&2; exit 1; }
+
+# The seed file: .loc-budgets.json, or a temp copy when the ledger is elsewhere.
+ledger=.loc-budgets.json
+if [ -n "$budgets_repo" ]; then
+  name=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null)
+  [ -n "$name" ] || { echo "--budgets-repo needs gh to name the code repository" >&2; exit 1; }
+  ledger=$(mktemp -d)/ledger.json
+fi
 
 # lint_cap excludes|strip: reads or removes the goclocbudget linter in
 # .golangci.yml by indentation, so the file's comments survive.
@@ -75,17 +89,18 @@ else:
 EOF
 }
 
-if [ ! -f .loc-budgets.json ] && [[ " $* " != *" -exclude "* ]]; then
+if [ ! -f "$ledger" ] && [[ " $* " != *" -exclude "* ]]; then
   excludes=$(lint_cap excludes)
   [ -n "$excludes" ] && set -- "$@" -exclude "$excludes"
 fi
 
-if [ -f .loc-budgets.json ]; then
-  echo "keep: .loc-budgets.json"
+if [ $migrate = 1 ] && [ -f .loc-budgets.json ]; then
+  cp .loc-budgets.json "$ledger"
+  echo "migrate: .loc-budgets.json copied to $ledger"
 elif [ -n "${GCM_BIN:-}" ]; then
-  "$GCM_BIN" budget init "$@"
+  "$GCM_BIN" budget init -ledger "$ledger" "$@"
 else
-  go run "github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@$version" budget init "$@"
+  go run "github.com/antonikliment/go-code-metrics/cmd/go-code-metrics@$version" budget init -ledger "$ledger" "$@"
 fi
 
 lint_cap strip
@@ -132,6 +147,10 @@ jobs:
     uses: antonikliment/go-code-metrics/.github/workflows/budget-pr.yml@${sha} # ${ref}
     with:
       version: ${version}
+      budgets-repo: ${budgets_repo}
+    secrets:
+      app-id: \${{ secrets.LINE_WARDEN_APP_ID }}
+      app-key: \${{ secrets.LINE_WARDEN_APP_KEY }}
   main:
     if: github.event_name == 'push'
     permissions:
@@ -140,6 +159,7 @@ jobs:
     with:
       version: ${version}
       dashboard-issue: ${dashboard_issue}
+      budgets-repo: ${budgets_repo}
     secrets:
       app-id: \${{ secrets.LINE_WARDEN_APP_ID }}
       app-key: \${{ secrets.LINE_WARDEN_APP_KEY }}
@@ -164,7 +184,7 @@ fi
 register_app() {
   [ $have_gh = 1 ] || { echo "--app needs an authenticated gh" >&2; exit 1; }
   command -v python3 >/dev/null || { echo "--app needs python3" >&2; exit 1; }
-  local repo owner name port state target code json app_id slug
+  local repo owner name port state target code json slug
   repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
   owner=${repo%%/*}
   name=${APP_NAME:-line-warden}
@@ -260,7 +280,27 @@ add_bypass() {
   done
 }
 
+# The budgets repository shares this owner, tracks its default branch, and is
+# written only by the app, with repo admins able to override.
+budgets_repo_ready() {
+  [ $have_gh = 1 ] || { echo "--budgets-repo needs an authenticated gh" >&2; exit 1; }
+  app_id=$(gh api "apps/${APP_NAME:-line-warden}" --jq .id 2>/dev/null) ||
+    { echo "--budgets-repo needs the ${APP_NAME:-line-warden} app: run with --app" >&2; exit 1; }
+  gh api "repos/$budgets_repo" --jq '"keep: budgets repo \(.full_name)"' 2>/dev/null ||
+    gh repo create "$budgets_repo" --public --add-readme
+  gh api -X PUT "repos/$budgets_repo/contents/$name.json" -f message="LoC budgets: seed $name.json" \
+    -f content="$(base64 -w0 "$ledger")" >/dev/null || echo "keep: $name.json in $budgets_repo"
+  [ $migrate = 1 ] && git rm -q .loc-budgets.json
+  gh api -X PUT "repos/$budgets_repo/rulesets" --input - <<EOF || echo "ledger ruleset not set (already present? see the error above)" >&2
+{"name":"budgets-app-only","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
+ "rules":[{"type":"update"},{"type":"deletion"},{"type":"non_fast_forward"},{"type":"creation"}],
+ "bypass_actors":[{"actor_type":"Integration","actor_id":$app_id,"bypass_mode":"always"},
+                  {"actor_type":"RepositoryRole","actor_id":5,"bypass_mode":"always"}]}
+EOF
+}
+
 [ $app = 1 ] && register_app
+[ -n "$budgets_repo" ] && budgets_repo_ready
 
 # The PR check is "<caller job> / <reusable job>": pr / budget. Requiring it
 # before the workflow is on the default branch would block every other PR.
@@ -293,10 +333,14 @@ require_check() {
 open_pr() {
   [ $have_gh = 1 ] || { echo "--pr needs an authenticated gh" >&2; exit 1; }
   [ "$(git branch --show-current)" = loc-budget ] || git checkout -q -B loc-budget
-  git add .loc-budgets.json "$wf"
+  git add "$wf"
   [ -f .golangci.yml ] && git add .golangci.yml
+  [ -f .loc-budgets.json ] && git add .loc-budgets.json
   local title body
-  if git cat-file -e "origin/$branch:.loc-budgets.json" 2>/dev/null; then
+  if [ $migrate = 1 ]; then
+    title="LoC budgets: move the ledger to $budgets_repo"
+    body="The ledger now lives in \`$budgets_repo\`, which the \`loc-budget\` workflow reads and writes through its \`budgets-repo\` input; the in-repo copy is removed here."
+  elif git cat-file -e "origin/$branch:.loc-budgets.json" 2>/dev/null; then
     title="Pin loc-budget to go-code-metrics $ref"
     body="Re-pins the loc-budget reusable workflows to go-code-metrics $ref (${sha:0:7})."
   else
@@ -324,10 +368,13 @@ cat <<'EOF'
 Remaining by hand:
   1. Without --app: secret LOC_BUDGET_TOKEN (fine-grained PAT, contents:write,
      plus issues:write with DASHBOARD_ISSUE=yes) allowed to bypass the default-branch
-     ruleset.
-     With --app: install the app (link above), check the bypass was added, and
+     ruleset. With --app: install the app (link above), check the bypass was added, and
      optionally upload an icon in the app settings (manifests cannot set one).
+     A separate budgets repo needs the same write access there, which --budgets-repo
+     grants only with --app (or a PAT scoped to that repository too).
   2. Once the workflow is merged, re-run to require the "pr / budget" check;
      turn on "dismiss stale approvals" so a push re-asks for a raise approval.
-  3. Without --pr: commit .loc-budgets.json, the workflow and .golangci.yml.
+  3. Without --pr: commit .loc-budgets.json, the workflow and .golangci.yml;
+     with --migrate-budgets, commit the removal of .loc-budgets.json.
 EOF
+

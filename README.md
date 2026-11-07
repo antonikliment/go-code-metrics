@@ -262,6 +262,16 @@ Reusable workflows:
   Create the `loc-raise` label first, plus `loc-budgets` when the issue
   dashboard is on.
 
+With `budgets-repo: owner/name` set on both workflows, the ledger lives in that
+repository (same owner as the code repository) as `<owner>/<repo>.json` on its
+default branch, so no code commit ever touches budget numbers; `scripts/setup-budget.sh`
+bootstraps it, and `--migrate-budgets` moves an existing in-repo ledger there. A private budgets repo is read with the `app-id`/`app-key` secrets (the line-warden app), which both budget workflows accept.
+
+```bash
+scripts/setup-budget.sh path/to/repo --budgets-repo owner/name
+scripts/setup-budget.sh --migrate-budgets owner/name path/to/repo
+```
+
 ```yaml
 # caller: .github/workflows/loc-budget.yml
 on:
