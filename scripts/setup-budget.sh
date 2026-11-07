@@ -115,7 +115,7 @@ if ! [[ $ref =~ ^[0-9a-f]{40}$ ]]; then
 fi
 # With the app, writes go through its token; github.token only reads.
 main_perms="contents: read"
-[ $app = 1 ] || main_perms="contents: write"
+[ $app = 1 ] || [ -n "$budgets_repo" ] || main_perms="contents: write"
 if [ $app != 1 ] && [ $dashboard_issue = true ]; then
   main_perms="$main_perms
       issues: write"
@@ -290,13 +290,16 @@ budgets_repo_ready() {
     gh repo create "$budgets_repo" --public --add-readme
   gh api -X PUT "repos/$budgets_repo/contents/$name.json" -f message="LoC budgets: seed $name.json" \
     -f content="$(base64 -w0 "$ledger")" >/dev/null || echo "keep: $name.json in $budgets_repo"
-  [ $migrate = 1 ] && git rm -q .loc-budgets.json
-  gh api -X PUT "repos/$budgets_repo/rulesets" --input - <<EOF || echo "ledger ruleset not set (already present? see the error above)" >&2
+  [ $migrate = 1 ] && git rm -q --ignore-unmatch .loc-budgets.json
+  # An Integration bypass needs the app installed on the budgets repository first.
+  if ! gh api "repos/$budgets_repo/rulesets" --jq '.[].name' 2>/dev/null | grep -qx budgets-app-only; then
+    gh api -X POST "repos/$budgets_repo/rulesets" --input - <<EOF || echo "install the ${APP_NAME:-line-warden} app on $budgets_repo (org settings > GitHub Apps > Configure), then re-run" >&2
 {"name":"budgets-app-only","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["~DEFAULT_BRANCH"],"exclude":[]}},
  "rules":[{"type":"update"},{"type":"deletion"},{"type":"non_fast_forward"},{"type":"creation"}],
  "bypass_actors":[{"actor_type":"Integration","actor_id":$app_id,"bypass_mode":"always"},
                   {"actor_type":"RepositoryRole","actor_id":5,"bypass_mode":"always"}]}
 EOF
+  fi
 }
 
 [ $app = 1 ] && register_app
