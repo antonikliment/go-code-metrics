@@ -84,6 +84,7 @@ jobs:
             dst="$BUDGETS_REPO/contents/$GITHUB_REPOSITORY.json"
             branch=
             gh api "repos/$dst" --jq .content 2>/dev/null | base64 -d > old
+            cp old "$LEDGER"
             sha=$(gh api "repos/$dst" --jq .sha 2>/dev/null) || sha=
           else
             cp "$LEDGER" old
