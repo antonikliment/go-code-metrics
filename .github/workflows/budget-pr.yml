@@ -15,6 +15,10 @@ on:
       ledger:
         type: string
         default: .loc-budgets.json
+      ledger-repo:
+        description: separate repo of the same owner holding the ledger as <owner>/<repo>.json on its default branch (empty keeps it in this repo)
+        type: string
+        default: ''
       approver-role:
         description: lowest repository role whose review or loc-raise label approves a raise (write, maintain or admin)
         type: string
@@ -64,9 +68,13 @@ jobs:
       - id: check
         run: |
           set +e
-          # The PR that installs the ledger has none on the base yet.
+          # With ledger-repo, the ledger is fetched there instead of read from base.
           ledger=base/${{ inputs.ledger }}
-          [ -f "$ledger" ] || { ledger=pr/${{ inputs.ledger }}; echo "_Ledger introduced by this PR._"; echo; } > budget.md
+          if [ -n '${{ inputs.ledger-repo }}' ]; then
+            gh api "repos/${{ inputs.ledger-repo }}/contents/$GITHUB_REPOSITORY.json" --jq .content 2>/dev/null |
+              base64 -d > "$ledger"
+          fi
+          [ -s "$ledger" ] || { ledger=pr/${{ inputs.ledger }}; echo "_Ledger introduced by this PR._"; echo; } > budget.md
           go-code-metrics budget check -root pr -ledger "$ledger" -base-root base >> budget.md 2>&1
           echo "over=$?" >> "$GITHUB_OUTPUT"
       - id: approval
