@@ -15,7 +15,7 @@ on:
       ledger:
         type: string
         default: .loc-budgets.json
-      ledger-repo:
+      budgets-repo:
         description: separate repo of the same owner holding the ledger as <owner>/<repo>.json on its default branch (empty keeps it in this repo)
         type: string
         default: ''
@@ -47,9 +47,9 @@ jobs:
         with:
           app-id: ${{ secrets.app-id }}
           private-key: ${{ secrets.app-key }}
-          # Bare names, same owner: ledger-repo must be a repository of this owner.
+          # Bare names, same owner: budgets-repo must be a repository of this owner.
           repositories: ${{ github.event.repository.name }}
-            ${{ inputs.ledger-repo != '' && split(inputs.ledger-repo, '/')[1] || '' }}
+            ${{ inputs.budgets-repo != '' && split(inputs.budgets-repo, '/')[1] || '' }}
       - id: tok
         env:
           APP_TOKEN: ${{ steps.app.outputs.token }}
@@ -72,14 +72,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.tok.outputs.token }}
           LEDGER: ${{ inputs.ledger }}
-          LEDGER_REPO: ${{ inputs.ledger-repo }}
+          BUDGETS_REPO: ${{ inputs.budgets-repo }}
         run: |
-          # ledger-repo holds it as <owner>/<repo>.json on its own default branch,
+          # budgets-repo holds it as <owner>/<repo>.json on its own default branch,
           # so the PUT there takes no branch and no sha when it is new.
           dst="$GITHUB_REPOSITORY/contents/$LEDGER"
           branch="$GITHUB_REF_NAME"
-          if [ -n "$LEDGER_REPO" ]; then
-            dst="$LEDGER_REPO/contents/$GITHUB_REPOSITORY.json"
+          if [ -n "$BUDGETS_REPO" ]; then
+            dst="$BUDGETS_REPO/contents/$GITHUB_REPOSITORY.json"
             branch=
             gh api "repos/$dst" --jq .content 2>/dev/null | base64 -d > old
             sha=$(gh api "repos/$dst" --jq .sha 2>/dev/null) || sha=

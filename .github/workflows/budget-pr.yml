@@ -15,7 +15,7 @@ on:
       ledger:
         type: string
         default: .loc-budgets.json
-      ledger-repo:
+      budgets-repo:
         description: separate repo of the same owner holding the ledger as <owner>/<repo>.json on its default branch (empty keeps it in this repo)
         type: string
         default: ''
@@ -68,10 +68,10 @@ jobs:
       - id: check
         run: |
           set +e
-          # With ledger-repo, the ledger is fetched there instead of read from base.
+          # With budgets-repo, the ledger is fetched there instead of read from base.
           ledger=base/${{ inputs.ledger }}
-          if [ -n '${{ inputs.ledger-repo }}' ]; then
-            gh api "repos/${{ inputs.ledger-repo }}/contents/$GITHUB_REPOSITORY.json" --jq .content 2>/dev/null |
+          if [ -n '${{ inputs.budgets-repo }}' ]; then
+            gh api "repos/${{ inputs.budgets-repo }}/contents/$GITHUB_REPOSITORY.json" --jq .content 2>/dev/null |
               base64 -d > "$ledger"
           fi
           [ -s "$ledger" ] || { ledger=pr/${{ inputs.ledger }}; echo "_Ledger introduced by this PR._"; echo; } > budget.md
