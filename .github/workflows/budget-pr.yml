@@ -73,13 +73,17 @@ jobs:
       # (racing this run) approves the new head.
       - if: github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'loc-raise')
         run: gh pr edit "$PR" --remove-label loc-raise || true
+      - id: name
+        env:
+          BUDGETS_REPO: ${{ inputs.budgets-repo }}
+        run: echo "repo=${BUDGETS_REPO#*/}" >> "$GITHUB_OUTPUT"
       - if: inputs.budgets-repo != '' && env.HAS_APP == 'true'
         id: token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ secrets.app-id }}
           private-key: ${{ secrets.app-key }}
-          repositories: ${{ split(inputs.budgets-repo, '/')[1] }}
+          repositories: ${{ steps.name.outputs.repo }}
       - id: check
         run: |
           set +e
